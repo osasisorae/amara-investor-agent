@@ -1,0 +1,93 @@
+if (!process.env.QWEN_API_KEY) {
+  throw new Error('QWEN_API_KEY environment variable is required');
+}
+
+if (!process.env.QWEN_API_BASE_URL) {
+  throw new Error('QWEN_API_BASE_URL environment variable is required');
+}
+
+const QWEN_API_KEY = process.env.QWEN_API_KEY;
+const QWEN_API_BASE_URL = process.env.QWEN_API_BASE_URL;
+const QWEN_MODEL = process.env.QWEN_MODEL || 'qwen-plus';
+
+export interface QwenMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface QwenResponse {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    message: {
+      role: string;
+      content: string;
+    };
+    finish_reason: string;
+  }>;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export async function callQwen(
+  messages: QwenMessage[],
+  options?: {
+    temperature?: number;
+    max_tokens?: number;
+  }
+): Promise<string> {
+  try {
+    const response = await fetch(`${QWEN_API_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${QWEN_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: QWEN_MODEL,
+        messages,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.max_tokens ?? 1500,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Qwen API error: ${response.status} - ${errorText}`);
+    }
+
+    const data: QwenResponse = await response.json();
+    
+    if (!data.choices || data.choices.length === 0) {
+      throw new Error('No response from Qwen API');
+    }
+
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Qwen API call failed:', error);
+    throw error;
+  }
+}
+
+export async function callQwenWithSystemPrompt(
+  systemPrompt: string,
+  userMessage: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+): Promise<string> {
+  const messages: QwenMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...conversationHistory.map((msg) => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    })),
+    { role: 'user', content: userMessage },
+  ];
+
+  return callQwen(messages);
+}
