@@ -27,6 +27,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -105,6 +107,54 @@ export default function ChatPage() {
       alert('Failed to send message');
     } finally {
       setSending(false);
+    }
+  };
+
+  const uploadDocument = async (file: File, docType: string) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('docType', docType);
+
+      const response = await fetch(`/api/kyc/${leadId}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        setUploadedDocs((prev) => [...prev, docType]);
+        alert(`${docType} uploaded successfully!`);
+      } else {
+        alert('Failed to upload document');
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert('Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const completeKYC = async () => {
+    if (uploadedDocs.length < 2) {
+      alert('Please upload at least ID and proof of residence');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/kyc/${leadId}/upload`, {
+        method: 'PATCH',
+      });
+
+      if (response.ok) {
+        alert('KYC submitted for review! Our compliance team will review within 24-48 hours.');
+        if (lead) {
+          setLead({ ...lead, stage: 'pending_human_review' });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to complete KYC:', error);
     }
   };
 
@@ -231,14 +281,79 @@ export default function ChatPage() {
       {/* Input */}
       <footer className="border-t border-futurex-line bg-futurex-surface">
         <div className="max-w-4xl mx-auto px-6 py-4">
+          {/* KYC Upload Section */}
+          {lead?.stage === 'kyc_intake' && (
+            <div className="mb-4 p-4 bg-futurex-surface2 border border-futurex-gold-border rounded-lg">
+              <h3 className="text-futurex-gold font-semibold mb-3">Upload KYC Documents</h3>
+              <div className="space-y-2">
+                <label className="block">
+                  <span className="text-sm text-futurex-muted">Government ID {uploadedDocs.includes('id') && '✓'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'id')}
+                    disabled={uploading || uploadedDocs.includes('id')}
+                    className="block w-full text-sm text-futurex-muted mt-1
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-futurex-gold file:text-futurex-bg
+                      hover:file:opacity-90 file:cursor-pointer
+                      disabled:opacity-50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-futurex-muted">Proof of Residence {uploadedDocs.includes('residence') && '✓'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'residence')}
+                    disabled={uploading || uploadedDocs.includes('residence')}
+                    className="block w-full text-sm text-futurex-muted mt-1
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-futurex-gold file:text-futurex-bg
+                      hover:file:opacity-90 file:cursor-pointer
+                      disabled:opacity-50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-futurex-muted">Proof of Funds (Optional) {uploadedDocs.includes('funds') && '✓'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'funds')}
+                    disabled={uploading || uploadedDocs.includes('funds')}
+                    className="block w-full text-sm text-futurex-muted mt-1
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-futurex-gold file:text-futurex-bg
+                      hover:file:opacity-90 file:cursor-pointer
+                      disabled:opacity-50"
+                  />
+                </label>
+                {uploadedDocs.length >= 2 && (
+                  <button
+                    onClick={completeKYC}
+                    className="w-full bg-green-600 text-white py-2 rounded font-semibold hover:bg-green-700 mt-2"
+                  >
+                    Submit KYC for Review
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <form onSubmit={sendMessage} className="flex gap-3">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={sending || lead.stage === 'pending_human_review'}
+              disabled={sending || lead?.stage === 'pending_human_review'}
               placeholder={
-                lead.stage === 'pending_human_review'
+                lead?.stage === 'pending_human_review'
                   ? 'Waiting for KYC review...'
                   : 'Type your message...'
               }
@@ -249,7 +364,7 @@ export default function ChatPage() {
               disabled={
                 sending ||
                 !input.trim() ||
-                lead.stage === 'pending_human_review'
+                lead?.stage === 'pending_human_review'
               }
               className="bg-futurex-gold text-futurex-bg px-6 py-3 rounded font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -154,8 +154,9 @@ export class AgentOrchestrator {
         eventType: 'deal_room_accessed',
       });
 
+      // Move to KYC intake stage
       return {
-        message: response,
+        message: response + "\n\nGreat! Let's proceed with KYC verification. I'll guide you through the document upload process.",
         shouldUpdateStage: 'kyc_intake',
         metadata: { moving_to_kyc: true },
       };
