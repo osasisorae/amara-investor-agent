@@ -119,6 +119,25 @@ export default function AdminDashboard() {
     }
   };
 
+  const deleteLead = async (leadId: string, email: string) => {
+    if (!confirm(`Delete lead ${email}? This will remove ALL associated data and allow re-adding this email.`)) return;
+
+    try {
+      const response = await fetch(`/api/admin/leads/${leadId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        alert('Lead deleted successfully');
+        fetchLeads();
+      } else {
+        alert('Failed to delete lead');
+      }
+    } catch (error) {
+      console.error('Failed to delete lead:', error);
+    }
+  };
+
   const getStageColor = (stage: string) => {
     switch (stage) {
       case 'outreach_sent':
@@ -279,6 +298,13 @@ export default function AdminDashboard() {
                       >
                         View Chat
                       </Link>
+                      <button
+                        onClick={() => deleteLead(lead.id, lead.email)}
+                        className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700"
+                        title="Delete lead and all data"
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 </div>
