@@ -5,20 +5,15 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-futurex-bg flex flex-col">
       {/* Header */}
-      <header className="border-b border-futurex-line">
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <div>
-            <Image
-              src="/amara-wordmark-cropped.jpeg"
-              alt="Amara"
-              width={154}
-              height={48}
-              className="h-auto w-[132px] sm:w-[154px]"
-            />
-            <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-futurex-muted">
-              by FutureX
-            </div>
-          </div>
+      <header className="border-b border-futurex-line bg-futurex-surface">
+        <div className="mx-auto w-full max-w-4xl px-6 py-4">
+          <Image
+            src="/amara-wordmark-cropped.jpeg"
+            alt="Amara"
+            width={154}
+            height={48}
+            className="h-auto w-[132px] sm:w-[154px]"
+          />
         </div>
       </header>
 

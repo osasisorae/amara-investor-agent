@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import type { ChatMessage } from '@/lib/chat/messages';
+import type { LeadStage } from '@/lib/db/leads';
 import type {
   DealCardComponentData,
   DocumentListComponentData,
@@ -16,9 +17,32 @@ import { useFeedback } from '@/components/feedback-provider';
 interface Lead {
   id: string;
   email: string;
-  stage: string;
+  stage: LeadStage;
   kyc_submitted_at?: number;
 }
+
+const DEFAULT_INPUT_PLACEHOLDER = 'Type your message...';
+
+const INPUT_PLACEHOLDERS: Record<LeadStage, string> = {
+  outreach_sent: "Tell Amara where you're based...",
+  qualifying: "Tell Amara where you're based...",
+  deal_room: 'Ask a question about the investment...',
+  kyc_intake: 'Type your response...',
+  pending_human_review: '',
+  kyc_rejected: DEFAULT_INPUT_PLACEHOLDER,
+  agreement_pending: 'Type your response...',
+  agreement_signed: DEFAULT_INPUT_PLACEHOLDER,
+  payment_pending: DEFAULT_INPUT_PLACEHOLDER,
+  closed: DEFAULT_INPUT_PLACEHOLDER,
+  disqualified: DEFAULT_INPUT_PLACEHOLDER,
+};
+
+const QUALIFICATION_PLACEHOLDERS = {
+  investor_profile: "Tell Amara where you're based...",
+  ticket_size: 'Type your response...',
+  investment_horizon: 'Type your response...',
+  kyc_willingness: 'Type your response...',
+} as const;
 
 function getStarterPrompts(stage: string): string[] {
   if (stage === 'deal_room') {
@@ -397,25 +421,26 @@ export default function ChatPage() {
   };
 
   const getInputPlaceholder = () => {
-    if (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') {
-      return "Tell Amara where you're based...";
+    if (!lead) {
+      return DEFAULT_INPUT_PLACEHOLDER;
     }
 
-    if (lead?.stage === 'pending_human_review') {
-      return lead.kyc_submitted_at
-        ? 'Waiting for compliance review...'
-        : 'A FutureX team member will follow up directly.';
+    const currentQualificationQuestion =
+      latestMessage?.role === 'agent' &&
+      typeof latestMessage.metadata?.qualificationQuestion === 'string'
+        ? latestMessage.metadata.qualificationQuestion
+        : null;
+
+    if (
+      currentQualificationQuestion &&
+      currentQualificationQuestion in QUALIFICATION_PLACEHOLDERS
+    ) {
+      return QUALIFICATION_PLACEHOLDERS[
+        currentQualificationQuestion as keyof typeof QUALIFICATION_PLACEHOLDERS
+      ];
     }
 
-    if (lead?.stage === 'agreement_pending') {
-      return 'Ask about the agreement or next steps...';
-    }
-
-    if (lead?.stage === 'payment_pending') {
-      return 'Ask about payment instructions or onboarding...';
-    }
-
-    return 'Type your message...';
+    return INPUT_PLACEHOLDERS[lead.stage] ?? DEFAULT_INPUT_PLACEHOLDER;
   };
 
   const renderKycPrompt = (data: KycPromptComponentData) => {
@@ -535,18 +560,13 @@ export default function ChatPage() {
     <div className="flex h-screen flex-col bg-futurex-bg">
       <header className="border-b border-futurex-line bg-futurex-surface">
         <div className="mx-auto w-full max-w-4xl px-6 py-4">
-          <div>
-            <Image
-              src="/amara-wordmark-cropped.jpeg"
-              alt="Amara"
-              width={154}
-              height={48}
-              className="h-auto w-[132px] sm:w-[154px]"
-            />
-            <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-futurex-muted">
-              by FutureX
-            </div>
-          </div>
+          <Image
+            src="/amara-wordmark-cropped.jpeg"
+            alt="Amara"
+            width={154}
+            height={48}
+            className="h-auto w-[132px] sm:w-[154px]"
+          />
         </div>
       </header>
 
