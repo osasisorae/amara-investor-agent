@@ -123,7 +123,7 @@ export default function AdminDashboard() {
     if (!confirm(`Delete lead ${email}? This will remove ALL associated data and allow re-adding this email.`)) return;
 
     try {
-      const response = await fetch(`/api/admin/leads/${leadId}`, {
+      const response = await fetch(`/api/admin/leads?leadId=${leadId}`, {
         method: 'DELETE',
       });
 
@@ -131,10 +131,12 @@ export default function AdminDashboard() {
         alert('Lead deleted successfully');
         fetchLeads();
       } else {
-        alert('Failed to delete lead');
+        const error = await response.json();
+        alert(`Failed to delete lead: ${error.error}`);
       }
     } catch (error) {
       console.error('Failed to delete lead:', error);
+      alert('Failed to delete lead');
     }
   };
 
