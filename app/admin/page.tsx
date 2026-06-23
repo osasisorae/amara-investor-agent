@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useFeedback } from '@/components/feedback-provider';
 
 interface Lead {
   id: string;
@@ -23,6 +24,7 @@ interface Lead {
 }
 
 export default function AdminDashboard() {
+  const { notify, confirm } = useFeedback();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -67,21 +69,41 @@ export default function AdminDashboard() {
         setFullName('');
         setNotes('');
         fetchLeads();
-        alert('Offeree added and outreach email sent!');
+        notify({
+          title: 'Offeree added',
+          message: 'Offeree added and outreach email sent.',
+          tone: 'success',
+        });
       } else {
         const error = await response.json();
-        alert(`Failed: ${error.error}`);
+        notify({
+          title: 'Offeree not added',
+          message: error.error || 'Failed to add offeree.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to add offeree:', error);
-      alert('Failed to add offeree');
+      notify({
+        title: 'Offeree not added',
+        message: 'Failed to add offeree.',
+        tone: 'error',
+      });
     } finally {
       setAdding(false);
     }
   };
 
   const approveKYC = async (leadId: string) => {
-    if (!confirm('Approve this KYC submission?')) return;
+    if (
+      !(await confirm({
+        title: 'Approve KYC',
+        message: 'Approve this KYC submission?',
+        confirmLabel: 'Approve',
+      }))
+    ) {
+      return;
+    }
 
     try {
       const response = await fetch(`/api/admin/kyc/${leadId}`, {
@@ -94,18 +116,40 @@ export default function AdminDashboard() {
       });
 
       if (response.ok) {
-        alert('KYC approved!');
+        notify({
+          title: 'KYC approved',
+          message: 'The investor can now proceed to the agreement stage.',
+          tone: 'success',
+        });
         fetchLeads();
       } else {
-        alert('Failed to approve KYC');
+        notify({
+          title: 'Approval failed',
+          message: 'Failed to approve KYC.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to approve KYC:', error);
+      notify({
+        title: 'Approval failed',
+        message: 'Failed to approve KYC.',
+        tone: 'error',
+      });
     }
   };
 
   const rejectKYC = async (leadId: string) => {
-    if (!confirm('Reject this KYC submission?')) return;
+    if (
+      !(await confirm({
+        title: 'Reject KYC',
+        message: 'Reject this KYC submission?',
+        confirmLabel: 'Reject',
+        tone: 'danger',
+      }))
+    ) {
+      return;
+    }
 
     try {
       const response = await fetch(`/api/admin/kyc/${leadId}`, {
@@ -118,18 +162,40 @@ export default function AdminDashboard() {
       });
 
       if (response.ok) {
-        alert('KYC rejected');
+        notify({
+          title: 'KYC rejected',
+          message: 'The investor has been marked as rejected.',
+          tone: 'success',
+        });
         fetchLeads();
       } else {
-        alert('Failed to reject KYC');
+        notify({
+          title: 'Rejection failed',
+          message: 'Failed to reject KYC.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to reject KYC:', error);
+      notify({
+        title: 'Rejection failed',
+        message: 'Failed to reject KYC.',
+        tone: 'error',
+      });
     }
   };
 
   const deleteLead = async (leadId: string, email: string) => {
-    if (!confirm(`Delete lead ${email}? This will remove ALL associated data and allow re-adding this email.`)) return;
+    if (
+      !(await confirm({
+        title: 'Delete lead',
+        message: `Delete lead ${email}? This will remove all associated data and allow re-adding this email.`,
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      }))
+    ) {
+      return;
+    }
 
     try {
       const response = await fetch(`/api/admin/leads?leadId=${leadId}`, {
@@ -137,15 +203,29 @@ export default function AdminDashboard() {
       });
 
       if (response.ok) {
-        alert('Lead deleted successfully');
+        notify({
+          title: 'Lead deleted',
+          message: 'Lead deleted successfully.',
+          tone: 'success',
+        });
         fetchLeads();
       } else {
         const error = await response.json();
-        alert(`Failed to delete lead: ${error.error}`);
+        notify({
+          title: 'Delete failed',
+          message: error.error
+            ? `Failed to delete lead: ${error.error}`
+            : 'Failed to delete lead.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to delete lead:', error);
-      alert('Failed to delete lead');
+      notify({
+        title: 'Delete failed',
+        message: 'Failed to delete lead.',
+        tone: 'error',
+      });
     }
   };
 

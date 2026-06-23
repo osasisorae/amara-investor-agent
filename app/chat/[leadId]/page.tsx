@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import { markdownToHtml } from '@/lib/utils/markdown';
+import { useFeedback } from '@/components/feedback-provider';
 
 interface Message {
   id: string;
@@ -21,6 +22,7 @@ interface Lead {
 export default function ChatPage() {
   const params = useParams();
   const leadId = params.leadId as string;
+  const { notify } = useFeedback();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [lead, setLead] = useState<Lead | null>(null);
@@ -97,11 +99,19 @@ export default function ChatPage() {
           setLead({ ...lead, stage: data.stage });
         }
       } else {
-        alert('Failed to send message');
+        notify({
+          title: 'Message not sent',
+          message: data.error || 'Failed to send message.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to send message:', error);
-      alert('Failed to send message');
+      notify({
+        title: 'Message not sent',
+        message: 'Failed to send message.',
+        tone: 'error',
+      });
     } finally {
       setSending(false);
     }
@@ -121,13 +131,25 @@ export default function ChatPage() {
 
       if (response.ok) {
         setUploadedDocs((prev) => [...prev, docType]);
-        alert(`${docType} uploaded successfully!`);
+        notify({
+          title: 'Upload complete',
+          message: `${docType} uploaded successfully.`,
+          tone: 'success',
+        });
       } else {
-        alert('Failed to upload document');
+        notify({
+          title: 'Upload failed',
+          message: 'Failed to upload document.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed');
+      notify({
+        title: 'Upload failed',
+        message: 'Upload failed.',
+        tone: 'error',
+      });
     } finally {
       setUploading(false);
     }
@@ -135,7 +157,11 @@ export default function ChatPage() {
 
   const completeKYC = async () => {
     if (uploadedDocs.length < 2) {
-      alert('Please upload at least ID and proof of residence');
+      notify({
+        title: 'More documents needed',
+        message: 'Please upload at least ID and proof of residence.',
+        tone: 'info',
+      });
       return;
     }
 
@@ -145,13 +171,29 @@ export default function ChatPage() {
       });
 
       if (response.ok) {
-        alert('KYC submitted for review! Our compliance team will review within 24-48 hours.');
+        notify({
+          title: 'KYC submitted',
+          message:
+            'KYC submitted for review. Our compliance team will review within 24-48 hours.',
+          tone: 'success',
+        });
         if (lead) {
           setLead({ ...lead, stage: 'pending_human_review' });
         }
+      } else {
+        notify({
+          title: 'KYC not submitted',
+          message: 'Failed to submit KYC for review.',
+          tone: 'error',
+        });
       }
     } catch (error) {
       console.error('Failed to complete KYC:', error);
+      notify({
+        title: 'KYC not submitted',
+        message: 'Failed to complete KYC.',
+        tone: 'error',
+      });
     }
   };
 
