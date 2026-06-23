@@ -19,10 +19,21 @@ interface Lead {
   stage: string;
 }
 
+interface QualificationState {
+  currentQuestion:
+    | 'investor_profile'
+    | 'investment_horizon'
+    | 'ticket_size'
+    | 'kyc_willingness'
+    | null;
+  expectsBinaryResponse: boolean;
+}
+
 export default function ChatPage() {
   const params = useParams();
   const leadId = params.leadId as string;
   const { notify } = useFeedback();
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [lead, setLead] = useState<Lead | null>(null);
@@ -31,6 +42,11 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [qualificationState, setQualificationState] =
+    useState<QualificationState>({
+      currentQuestion: null,
+      expectsBinaryResponse: false,
+    });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,6 +65,12 @@ export default function ChatPage() {
       if (response.ok) {
         setMessages(data.messages || []);
         setLead(data.lead);
+        setQualificationState(
+          data.qualificationState || {
+            currentQuestion: null,
+            expectsBinaryResponse: false,
+          }
+        );
       }
     } catch (error) {
       console.error('Failed to load chat:', error);
@@ -61,11 +83,15 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || sending) return;
+  const applyStarterPrompt = (prompt: string) => {
+    setInput(prompt);
+    inputRef.current?.focus();
+  };
 
-    const userMessage = input.trim();
+  const submitMessage = async (rawMessage: string) => {
+    if (!rawMessage.trim() || sending) return;
+
+    const userMessage = rawMessage.trim();
     setInput('');
     setSending(true);
 
@@ -98,6 +124,12 @@ export default function ChatPage() {
         if (data.stage && lead) {
           setLead({ ...lead, stage: data.stage });
         }
+        setQualificationState(
+          data.qualificationState || {
+            currentQuestion: null,
+            expectsBinaryResponse: false,
+          }
+        );
       } else {
         notify({
           title: 'Message not sent',
@@ -115,6 +147,11 @@ export default function ChatPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitMessage(input);
   };
 
   const uploadDocument = async (file: File, docType: string) => {
@@ -211,6 +248,42 @@ export default function ChatPage() {
     return stageMap[stage] || stage;
   };
 
+  const starterPrompts = [
+    "I'm based in London and want to know if I qualify.",
+    "I'm comfortable with a 3-year holding period.",
+    'Can you walk me through the process step by step?',
+  ];
+  const shouldShowBinaryQuickReplies =
+    messages.length > 0 &&
+    (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') &&
+    qualificationState.expectsBinaryResponse;
+  const shouldShowLocationHint =
+    messages.length > 0 &&
+    (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') &&
+    qualificationState.currentQuestion === 'investor_profile';
+
+  const getInputPlaceholder = () => {
+    if (lead?.stage === 'pending_human_review') {
+      return 'Waiting for KYC review...';
+    }
+
+    if (messages.length === 0) {
+      return "Start with where you're based and whether a 3-year horizon works for you...";
+    }
+
+    switch (qualificationState.currentQuestion) {
+      case 'investor_profile':
+        return "Tell Amara where you're based, for example: I'm based in London and work outside Nigeria.";
+      case 'ticket_size':
+        return 'Reply yes or no, or share your intended investment amount...';
+      case 'investment_horizon':
+      case 'kyc_willingness':
+        return 'Reply yes or no...';
+      default:
+        return 'Type your message...';
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-futurex-bg flex items-center justify-center">
@@ -232,17 +305,15 @@ export default function ChatPage() {
       <header className="border-b border-futurex-line bg-futurex-surface">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="rounded-full border border-futurex-gold-border bg-[#fffdf8] px-4 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-              <Image
-                src="/amara-wordmark-cropped.jpeg"
-                alt="Amara"
-                width={126}
-                height={40}
-                className="h-auto w-[104px] opacity-90 sm:w-[126px]"
-              />
-            </div>
-            <div className="text-xs tracking-[0.18em] uppercase text-futurex-muted">
-              by FutureX
+            <Image
+              src="/amara-wordmark-cropped.jpeg"
+              alt="Amara"
+              width={154}
+              height={48}
+              className="h-auto w-[132px] sm:w-[154px]"
+            />
+            <div className="hidden text-[11px] tracking-[0.2em] uppercase text-futurex-muted sm:block">
+              Investor guide by FutureX
             </div>
           </div>
           <div className="text-xs px-3 py-1 bg-futurex-gold-soft text-futurex-gold rounded-full border border-futurex-gold-border">
@@ -256,28 +327,37 @@ export default function ChatPage() {
           {messages.length === 0 ? (
             <div className="mx-auto max-w-xl rounded-[28px] border border-futurex-line bg-futurex-surface p-8 text-center shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
               <div className="inline-block bg-futurex-gold-soft border border-futurex-gold-border text-futurex-gold text-sm px-4 py-2 rounded-full mb-4">
-                Welcome to FutureX
+                Start here
               </div>
-              <div className="mb-5 flex justify-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#fffdf8] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
-                  <Image
-                    src="/amara-icon-cropped.jpeg"
-                    alt="Amara icon"
-                    width={48}
-                    height={48}
-                    className="h-12 w-12 object-cover"
-                  />
-                </div>
-              </div>
-              <h2 className="mb-2 font-serif text-2xl text-futurex-ink">Amara</h2>
-              <div className="mb-4 text-[11px] tracking-[0.24em] uppercase text-futurex-muted">
-                FutureX investor guide
-              </div>
-              <p className="text-futurex-muted max-w-md mx-auto">
-                I&apos;m here to guide you through the FutureX investment process.
-                Let&apos;s start by understanding if this opportunity is right for
-                you.
+              <h2 className="mb-3 font-serif text-2xl text-futurex-ink">
+                Start the conversation
+              </h2>
+              <p className="mx-auto max-w-lg text-futurex-muted">
+                Tell Amara where you&apos;re based, whether a 3-year holding period
+                works for you, and anything else that affects fit. That gives the
+                assistant enough context to qualify you properly.
               </p>
+              <div className="mx-auto mt-6 max-w-md rounded-2xl border border-futurex-line bg-futurex-surface2 px-5 py-4 text-left">
+                <div className="text-[11px] tracking-[0.2em] uppercase text-futurex-muted">
+                  Good first message
+                </div>
+                <p className="mt-2 text-sm text-futurex-ink">
+                  I&apos;m based in London and want to know if I qualify. I&apos;m still
+                  deciding whether a 3-year holding period works for me.
+                </p>
+              </div>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {starterPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => applyStarterPrompt(prompt)}
+                    className="rounded-full border border-futurex-line bg-futurex-surface2 px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((msg) => (
@@ -394,17 +474,47 @@ export default function ChatPage() {
             </div>
           )}
 
+          {shouldShowLocationHint && (
+            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-sm text-futurex-muted">
+              Start by telling Amara where you&apos;re based. Example:
+              <span className="block pt-1 text-futurex-ink">
+                I&apos;m based in London and work outside Nigeria.
+              </span>
+            </div>
+          )}
+
+          {shouldShowBinaryQuickReplies && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
+                Quick reply
+              </span>
+              <button
+                type="button"
+                onClick={() => submitMessage('Yes')}
+                disabled={sending}
+                className="rounded-full border border-futurex-gold-border bg-futurex-gold-soft px-4 py-2 text-sm font-medium text-futurex-gold transition hover:opacity-90 disabled:opacity-50"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => submitMessage('No')}
+                disabled={sending}
+                className="rounded-full border border-futurex-line bg-futurex-surface2 px-4 py-2 text-sm font-medium text-futurex-ink transition hover:border-rose-400 hover:text-rose-200 disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          )}
+
           <form onSubmit={sendMessage} className="flex gap-3">
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={sending || lead?.stage === 'pending_human_review'}
-              placeholder={
-                lead?.stage === 'pending_human_review'
-                  ? 'Waiting for KYC review...'
-                  : 'Type your message...'
-              }
+              placeholder={getInputPlaceholder()}
               className="flex-1 bg-futurex-surface2 border border-futurex-line rounded px-4 py-3 text-futurex-ink placeholder-futurex-muted focus:border-futurex-gold outline-none disabled:opacity-50"
             />
             <button

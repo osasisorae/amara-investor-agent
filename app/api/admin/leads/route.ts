@@ -4,6 +4,8 @@ import { query, execute, queryOne } from '@/lib/db/client';
 import {
   buildFutureInterestNote,
   detectFutureInterestRequest,
+  getDisqualificationReason,
+  QUALIFICATION_SEQUENCE,
   summarizeQualificationAnswer,
 } from '@/lib/agent/qualification';
 
@@ -28,6 +30,16 @@ interface MessageRow {
   content: string;
   created_at: number;
 }
+
+const QUALIFIED_STAGES = new Set([
+  'deal_room',
+  'kyc_intake',
+  'pending_human_review',
+  'agreement_pending',
+  'agreement_signed',
+  'payment_pending',
+  'closed',
+]);
 
 function parseMetadata(value?: string | null): Record<string, any> | null {
   if (!value) {
@@ -62,26 +74,53 @@ function inferHistoricalSummary(messages: MessageRow[]) {
 
     if (message.role === 'agent' && !disqualificationReason) {
       const lower = message.content.toLowerCase();
+      const hasFailureCue =
+        lower.includes('not the right fit') ||
+        lower.includes("isn't the right fit") ||
+        lower.includes('not eligible') ||
+        lower.includes('cannot proceed') ||
+        lower.includes('unfortunately') ||
+        lower.includes('does not meet') ||
+        lower.includes("doesn't meet") ||
+        lower.includes('below the minimum') ||
+        lower.includes('not comfortable') ||
+        lower.includes('not willing');
 
       if (
-        lower.includes('minimum investment horizon of 3 years') ||
-        lower.includes("isn't the right fit for your current goals")
+        hasFailureCue &&
+        (lower.includes('minimum investment horizon of 3 years') ||
+          lower.includes('3-year') ||
+          lower.includes('holding period'))
       ) {
         disqualificationReason =
           'Not comfortable with the minimum 3-year investment horizon.';
       } else if (
-        lower.includes('minimum ticket size') ||
-        lower.includes('ngn 5m') ||
-        lower.includes('₦5m')
+        hasFailureCue &&
+        (lower.includes('minimum ticket size') ||
+          lower.includes('ngn 5m') ||
+          lower.includes('₦5m'))
       ) {
         disqualificationReason =
           'Below the minimum ticket size of NGN 5M (or USD equivalent).';
-      } else if (lower.includes('not willing to proceed through kyc')) {
+      } else if (
+        hasFailureCue &&
+        (lower.includes('not willing to proceed through kyc') ||
+          (lower.includes('kyc') && lower.includes('not willing')))
+      ) {
         disqualificationReason = 'Not willing to complete KYC compliance.';
       } else if (
-        lower.includes('not the right fit') ||
-        lower.includes('not eligible') ||
-        lower.includes('cannot proceed')
+        hasFailureCue &&
+        (lower.includes('diaspora') ||
+          lower.includes('hni') ||
+          lower.includes('eligibility'))
+      ) {
+        disqualificationReason =
+          'Does not meet the diaspora or verified local HNI requirement.';
+      } else if (
+        hasFailureCue &&
+        (lower.includes('not the right fit') ||
+          lower.includes('not eligible') ||
+          lower.includes('cannot proceed'))
       ) {
         disqualificationReason =
           'This opportunity is not a fit based on the qualification responses.';
@@ -194,8 +233,26 @@ export async function GET() {
       const historicalSummary = inferHistoricalSummary(
         messagesByLead.get(lead.id) || []
       );
+      const failedQuestion = QUALIFICATION_SEQUENCE.find(
+        (question) => latestAnswers[question]?.passed === 0
+      );
+      const hasPassedAllCriteria = QUALIFICATION_SEQUENCE.every(
+        (question) => latestAnswers[question]?.passed === 1
+      );
+      const isQualifiedLead =
+        hasPassedAllCriteria || QUALIFIED_STAGES.has(lead.stage);
+      const resolvedDisqualificationReason = isQualifiedLead
+        ? null
+        : failedMetadata?.reason ||
+          (failedQuestion ? getDisqualificationReason(failedQuestion) : null) ||
+          historicalSummary.disqualificationReason ||
+          null;
+      const resolvedFutureInterestNote = isQualifiedLead
+        ? null
+        : futureInterestMetadata?.note || historicalSummary.futureInterestNote || null;
       const effectiveStage =
-        lead.stage === 'disqualified' || failedMetadata?.reason || historicalSummary.disqualificationReason
+        !isQualifiedLead &&
+        (lead.stage === 'disqualified' || resolvedDisqualificationReason)
           ? 'disqualified'
           : lead.stage;
 
@@ -232,10 +289,8 @@ export async function GET() {
                 latestAnswers.kyc_willingness.passed
               )
             : null,
-          disqualificationReason:
-            failedMetadata?.reason || historicalSummary.disqualificationReason || null,
-          futureInterestNote:
-            futureInterestMetadata?.note || historicalSummary.futureInterestNote || null,
+          disqualificationReason: resolvedDisqualificationReason,
+          futureInterestNote: resolvedFutureInterestNote,
         },
       };
     });

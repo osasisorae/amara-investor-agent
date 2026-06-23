@@ -188,7 +188,7 @@ export class AgentOrchestrator {
       });
 
       return {
-        message: response,
+        message: this.buildQualificationSuccessMessage(),
         shouldUpdateStage: 'deal_room',
         metadata: { qualified: true },
       };
@@ -404,6 +404,19 @@ export class AgentOrchestrator {
 
     const lowerMessage = message.toLowerCase();
     return kycKeywords.some((keyword) => lowerMessage.includes(keyword));
+  }
+
+  private buildQualificationSuccessMessage(): string {
+    return `You’ve now met all four qualification criteria:
+
+- Nigerian diaspora or verified local HNI status confirmed
+- Minimum 3-year investment horizon confirmed
+- Minimum ticket size confirmed
+- KYC readiness confirmed
+
+Your FutureX deal room access is now active in this same conversation. I can walk you through the opportunity summary, key economics, risks, and next onboarding steps.
+
+If you’d like, I can start with a brief overview of what to expect in the deal room.`;
   }
 }
 

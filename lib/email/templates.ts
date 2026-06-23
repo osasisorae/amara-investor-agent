@@ -203,3 +203,67 @@ investfuturex.com · info@investfuturex.com
 
   return { subject, html, text };
 }
+
+export function getDealRoomAccessEmailTemplate(params: {
+  investorName: string;
+  chatLink: string;
+}): { subject: string; html: string; text: string } {
+  const subject = 'You now have access to the FutureX deal room';
+
+  const html = renderEmailLayout(
+    `
+      <h2>You&apos;re qualified, ${params.investorName}.</h2>
+
+      <p>You&apos;ve met the qualification criteria for the <strong class="gold">Akwa Ibom Hospitality Vehicle</strong>, and your deal room access is now active.</p>
+
+      <div class="alert">
+        <strong>Continue here:</strong> use the same secure conversation link below to review materials and ask due diligence questions.
+      </div>
+
+      <p>You can now use Amara to walk through:</p>
+      <ul>
+        <li>The offering memorandum and opportunity summary</li>
+        <li>Key economics, risks, and timeline</li>
+        <li>Next-step onboarding and KYC requirements</li>
+      </ul>
+
+      <a href="${params.chatLink}" class="cta">Open the Deal Room →</a>
+
+      <p>If anything is unclear, reply in the chat and Amara will guide you from there.</p>
+
+      <p><strong>Amara</strong><br>
+      FutureX Investor Agent<br>
+      <span class="gold">her@investfuturex.com</span></p>
+    `,
+    `
+      <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
+      investfuturex.com · info@investfuturex.com</p>
+    `
+  );
+
+  const text = `
+You're qualified, ${params.investorName}.
+
+You've met the qualification criteria for the Akwa Ibom Hospitality Vehicle, and your deal room access is now active.
+
+Continue here using the same secure conversation link:
+${params.chatLink}
+
+You can now use Amara to walk through:
+- The offering memorandum and opportunity summary
+- Key economics, risks, and timeline
+- Next-step onboarding and KYC requirements
+
+If anything is unclear, reply in the chat and Amara will guide you from there.
+
+Amara
+FutureX Investor Agent
+her@investfuturex.com
+
+---
+FutureX · Real Estate Syndication for Nigerian Diaspora Investors
+investfuturex.com · info@investfuturex.com
+  `;
+
+  return { subject, html, text };
+}
