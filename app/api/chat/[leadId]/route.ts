@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeadById, updateLeadStage } from '@/lib/db/leads';
+import { getLeadById, updateLeadStage, type Lead, type LeadStage } from '@/lib/db/leads';
 import { getMessagesByLeadId } from '@/lib/db/messages';
 import {
   getLatestQualificationAnswerMap,
@@ -18,6 +18,65 @@ const BINARY_QUALIFICATION_QUESTIONS = new Set<QualificationQuestion>([
   'ticket_size',
   'kyc_willingness',
 ]);
+
+function inferLeadStageFromMessages(
+  lead: Lead,
+  messages: Array<{ role: 'agent' | 'investor'; content: string }>
+): LeadStage | null {
+  if (
+    lead.stage !== 'outreach_sent' &&
+    lead.stage !== 'qualifying' &&
+    lead.stage !== 'disqualified'
+  ) {
+    return null;
+  }
+
+  const latestAgentMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'agent');
+
+  if (!latestAgentMessage) {
+    return null;
+  }
+
+  const lower = latestAgentMessage.content.toLowerCase();
+
+  if (
+    lower.includes("you're in") ||
+    lower.includes('qualified for the deal room') ||
+    lower.includes('deal room access is now active')
+  ) {
+    return 'deal_room';
+  }
+
+  if (
+    lower.includes('not the right fit') ||
+    lower.includes('not eligible') ||
+    lower.includes('cannot proceed') ||
+    lower.includes('not a fit')
+  ) {
+    return 'disqualified';
+  }
+
+  return null;
+}
+
+async function reconcileLeadStage(
+  lead: Lead,
+  messages: Array<{ role: 'agent' | 'investor'; content: string }>
+): Promise<Lead> {
+  const inferredStage = inferLeadStageFromMessages(lead, messages);
+
+  if (!inferredStage || inferredStage === lead.stage) {
+    return lead;
+  }
+
+  await updateLeadStage(lead.id, inferredStage);
+  return {
+    ...lead,
+    stage: inferredStage,
+  };
+}
 
 async function getQualificationState(
   leadId: string,
@@ -53,12 +112,13 @@ export async function GET(
   try {
     const { leadId } = params;
 
-    const lead = await getLeadById(leadId);
+    let lead = await getLeadById(leadId);
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
     const messages = await getMessagesByLeadId(leadId);
+    lead = await reconcileLeadStage(lead, messages);
     const qualificationState = await getQualificationState(leadId, lead.stage);
 
     return NextResponse.json({
@@ -90,10 +150,13 @@ export async function POST(
       );
     }
 
-    const lead = await getLeadById(leadId);
+    let lead = await getLeadById(leadId);
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
+
+    const existingMessages = await getMessagesByLeadId(leadId);
+    lead = await reconcileLeadStage(lead, existingMessages);
 
     // Process message through agent orchestrator
     const response = await orchestrator.processMessage(lead, message);

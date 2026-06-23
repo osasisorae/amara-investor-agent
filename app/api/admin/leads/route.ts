@@ -61,7 +61,7 @@ function inferHistoricalSummary(messages: MessageRow[]) {
   for (const message of messages) {
     if (message.role === 'investor' && !location) {
       const match = message.content.match(
-        /\b(?:based in|live in|located in|resident in|from)\s+([a-z ,'-]{2,40})/i
+        /\b(?:based in|live in|located in|resident in|from|i(?:'m| am)? in)\s+([a-z ,'-]{2,40})/i
       );
 
       if (match) {
@@ -153,6 +153,39 @@ function inferHistoricalSummary(messages: MessageRow[]) {
   };
 }
 
+function inferStageFromMessages(
+  messages: MessageRow[]
+): 'deal_room' | 'disqualified' | null {
+  const latestAgentMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'agent');
+
+  if (!latestAgentMessage) {
+    return null;
+  }
+
+  const lower = latestAgentMessage.content.toLowerCase();
+
+  if (
+    lower.includes("you're in") ||
+    lower.includes('qualified for the deal room') ||
+    lower.includes('deal room access is now active')
+  ) {
+    return 'deal_room';
+  }
+
+  if (
+    lower.includes('not the right fit') ||
+    lower.includes('not eligible') ||
+    lower.includes('cannot proceed') ||
+    lower.includes('not a fit')
+  ) {
+    return 'disqualified';
+  }
+
+  return null;
+}
+
 export async function GET() {
   try {
     const leads = await getAllLeads();
@@ -230,9 +263,9 @@ export async function GET() {
       const futureInterestEvent = latestFutureInterestByLead.get(lead.id);
       const failedMetadata = parseMetadata(failedEvent?.metadata);
       const futureInterestMetadata = parseMetadata(futureInterestEvent?.metadata);
-      const historicalSummary = inferHistoricalSummary(
-        messagesByLead.get(lead.id) || []
-      );
+      const leadMessages = messagesByLead.get(lead.id) || [];
+      const historicalSummary = inferHistoricalSummary(leadMessages);
+      const inferredStage = inferStageFromMessages(leadMessages);
       const failedQuestion = QUALIFICATION_SEQUENCE.find(
         (question) => latestAnswers[question]?.passed === 0
       );
@@ -240,7 +273,9 @@ export async function GET() {
         (question) => latestAnswers[question]?.passed === 1
       );
       const isQualifiedLead =
-        hasPassedAllCriteria || QUALIFIED_STAGES.has(lead.stage);
+        hasPassedAllCriteria ||
+        QUALIFIED_STAGES.has(lead.stage) ||
+        inferredStage === 'deal_room';
       const resolvedDisqualificationReason = isQualifiedLead
         ? null
         : failedMetadata?.reason ||
@@ -251,10 +286,14 @@ export async function GET() {
         ? null
         : futureInterestMetadata?.note || historicalSummary.futureInterestNote || null;
       const effectiveStage =
-        !isQualifiedLead &&
-        (lead.stage === 'disqualified' || resolvedDisqualificationReason)
-          ? 'disqualified'
-          : lead.stage;
+        inferredStage === 'deal_room'
+          ? 'deal_room'
+          : !isQualifiedLead &&
+              (lead.stage === 'disqualified' ||
+                inferredStage === 'disqualified' ||
+                resolvedDisqualificationReason)
+            ? 'disqualified'
+            : lead.stage;
 
       return {
         ...lead,

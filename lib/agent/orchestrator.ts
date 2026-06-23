@@ -97,15 +97,30 @@ export class AgentOrchestrator {
     lead: Lead,
     message: string
   ): Promise<OrchestratorResponse> {
+    const conversationHistory = await getConversationHistory(lead.id);
+    const historyWithoutCurrentMessage = this.stripCurrentUserMessage(
+      conversationHistory,
+      message
+    );
     const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
     const currentQuestion = getNextQualificationQuestion(
       Object.keys(latestAnswers)
     );
+    const lastAgentMessage = [...historyWithoutCurrentMessage]
+      .reverse()
+      .find((entry) => entry.role === 'assistant')?.content;
+    const promptedQuestion = lastAgentMessage
+      ? this.detectQualificationQuestion(lastAgentMessage)
+      : null;
+    const questionToAssess =
+      promptedQuestion && !latestAnswers[promptedQuestion]
+        ? promptedQuestion
+        : currentQuestion;
     let failedQuestion: QualificationQuestion | null = null;
     let disqualificationReason: string | null = null;
 
-    if (currentQuestion) {
-      const assessment = assessQualificationResponse(currentQuestion, message);
+    if (questionToAssess) {
+      const assessment = assessQualificationResponse(questionToAssess, message);
 
       if (assessment?.matched) {
         await saveQualificationAnswer({
@@ -176,12 +191,11 @@ export class AgentOrchestrator {
         },
       });
 
-      const conversationHistory = await getConversationHistory(lead.id);
       const systemPrompt = getSystemPromptForStage('qualifying');
       const response = await callQwenWithSystemPrompt(
         systemPrompt,
         message,
-        conversationHistory
+        historyWithoutCurrentMessage
       );
 
       return {
@@ -196,14 +210,52 @@ export class AgentOrchestrator {
     }
 
     // Continue qualification conversation
-    const conversationHistory = await getConversationHistory(lead.id);
     const systemPrompt = getSystemPromptForStage('qualifying');
 
     const response = await callQwenWithSystemPrompt(
       systemPrompt,
       message,
-      conversationHistory
+      historyWithoutCurrentMessage
     );
+
+    if (this.detectQualificationComplete(response)) {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'qualification_passed',
+        metadata: {
+          source: 'assistant_response',
+        },
+      });
+
+      return {
+        message: response,
+        shouldUpdateStage: 'deal_room',
+        metadata: { qualified: true, inferred: true },
+      };
+    }
+
+    if (this.detectDisqualification(response)) {
+      const fallbackReason = questionToAssess
+        ? getDisqualificationReason(questionToAssess)
+        : 'AI identified this lead as not a fit for the current opportunity.';
+
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'qualification_failed',
+        metadata: {
+          criterion: questionToAssess,
+          reason: fallbackReason,
+          answer: message,
+          source: 'assistant_response',
+        },
+      });
+
+      return {
+        message: response,
+        shouldUpdateStage: 'disqualified',
+        metadata: { disqualified: true, reason: fallbackReason, inferred: true },
+      };
+    }
 
     return {
       message: response,
@@ -219,6 +271,10 @@ export class AgentOrchestrator {
     message: string
   ): Promise<OrchestratorResponse> {
     const conversationHistory = await getConversationHistory(lead.id);
+    const historyWithoutCurrentMessage = this.stripCurrentUserMessage(
+      conversationHistory,
+      message
+    );
     const systemPrompt = getSystemPromptForStage('deal_room');
 
     // Load knowledge base
@@ -230,7 +286,7 @@ export class AgentOrchestrator {
     const response = await callQwenWithSystemPrompt(
       augmentedPrompt,
       message,
-      conversationHistory
+      historyWithoutCurrentMessage
     );
 
     // Check if investor is ready for KYC
@@ -261,12 +317,16 @@ export class AgentOrchestrator {
     message: string
   ): Promise<OrchestratorResponse> {
     const conversationHistory = await getConversationHistory(lead.id);
+    const historyWithoutCurrentMessage = this.stripCurrentUserMessage(
+      conversationHistory,
+      message
+    );
     const systemPrompt = getSystemPromptForStage('kyc_intake');
 
     const response = await callQwenWithSystemPrompt(
       systemPrompt,
       message,
-      conversationHistory
+      historyWithoutCurrentMessage
     );
 
     return { message: response };
@@ -338,7 +398,93 @@ export class AgentOrchestrator {
     const lowerMessage = message.toLowerCase();
     return kycKeywords.some((keyword) => lowerMessage.includes(keyword));
   }
+
+  private stripCurrentUserMessage(
+    conversationHistory: Array<{ role: 'assistant' | 'user'; content: string }>,
+    currentMessage: string
+  ) {
+    return conversationHistory.at(-1)?.role === 'user' &&
+      conversationHistory.at(-1)?.content === currentMessage
+      ? conversationHistory.slice(0, -1)
+      : conversationHistory;
+  }
+
+  private detectQualificationQuestion(
+    message: string
+  ): QualificationQuestion | null {
+    const lowerMessage = message.toLowerCase();
+
+    if (
+      lowerMessage.includes('diaspora') ||
+      lowerMessage.includes('high net worth') ||
+      lowerMessage.includes('hni') ||
+      lowerMessage.includes('outside nigeria')
+    ) {
+      return 'investor_profile';
+    }
+
+    if (
+      lowerMessage.includes('₦5') ||
+      lowerMessage.includes('ngn 5') ||
+      lowerMessage.includes('$3,300') ||
+      lowerMessage.includes('ticket size') ||
+      lowerMessage.includes('minimum ticket')
+    ) {
+      return 'ticket_size';
+    }
+
+    if (
+      lowerMessage.includes('5 years') ||
+      lowerMessage.includes('5-year') ||
+      lowerMessage.includes('hold period') ||
+      lowerMessage.includes('investment period')
+    ) {
+      return 'investment_horizon';
+    }
+
+    if (
+      lowerMessage.includes('kyc') ||
+      lowerMessage.includes('verify your identity') ||
+      lowerMessage.includes('proof of identity')
+    ) {
+      return 'kyc_willingness';
+    }
+
+    return null;
+  }
+
+  private detectQualificationComplete(response: string): boolean {
+    const qualifiedKeywords = [
+      "you're in",
+      'qualified for the deal room',
+      'deal room access',
+      'qualified',
+      'deal room',
+    ];
+
+    const lowerResponse = response.toLowerCase();
+    return qualifiedKeywords.some((keyword) =>
+      lowerResponse.includes(keyword)
+    );
+  }
+
+  private detectDisqualification(response: string): boolean {
+    const disqualifiedKeywords = [
+      "don't qualify",
+      'not eligible',
+      'cannot proceed',
+      'unfortunately',
+      'not the right fit',
+      'isn’t the right fit',
+      "isn't the right fit",
+      'not a fit',
+    ];
+
+    const lowerResponse = response.toLowerCase();
+    return disqualifiedKeywords.some((keyword) =>
+      lowerResponse.includes(keyword)
+    );
+  }
 }
 
 export const orchestrator = new AgentOrchestrator();
-

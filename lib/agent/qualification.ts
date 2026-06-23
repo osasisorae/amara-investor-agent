@@ -15,8 +15,8 @@ export interface QualificationAssessment {
 
 export const QUALIFICATION_SEQUENCE: QualificationQuestion[] = [
   'investor_profile',
-  'investment_horizon',
   'ticket_size',
+  'investment_horizon',
   'kyc_willingness',
 ];
 
@@ -33,6 +33,8 @@ const DIASPORA_LOCATION_KEYWORDS = [
   'usa',
   'us',
   'united states',
+  'las vegas',
+  'nevada',
   'canada',
   'toronto',
   'vancouver',
@@ -98,7 +100,7 @@ function titleCaseWords(value: string): string {
 
 function extractLocation(value: string): string | undefined {
   const match = value.match(
-    /\b(?:based in|live in|located in|resident in|from)\s+([a-z ,'-]{2,40})/i
+    /\b(?:based in|live in|located in|resident in|from|i(?:'m| am)? in)\s+([a-z ,'-]{2,40})/i
   );
 
   if (!match) {
@@ -125,6 +127,10 @@ function parseDurationInYears(value: string): number | null {
 
   if (/\bthree years?\b/i.test(value)) {
     return 3;
+  }
+
+  if (/\bfive years?\b/i.test(value)) {
+    return 5;
   }
 
   if (/\btwo years?\b/i.test(value)) {
@@ -204,10 +210,20 @@ export function assessQualificationResponse(
   switch (question) {
     case 'investor_profile': {
       const location = extractLocation(message);
+      const normalizedLocation = location ? normalizeText(location) : '';
+      const locationSuggestsDiaspora =
+        Boolean(location) &&
+        !includesAny(normalizedLocation, NIGERIA_LOCATION_KEYWORDS);
+      const locationSuggestsNigeria =
+        Boolean(location) &&
+        includesAny(normalizedLocation, NIGERIA_LOCATION_KEYWORDS);
       const isDiaspora =
         normalized.includes('diaspora') ||
-        includesAny(normalized, DIASPORA_LOCATION_KEYWORDS);
-      const isNigeriaBased = includesAny(normalized, NIGERIA_LOCATION_KEYWORDS);
+        includesAny(normalized, DIASPORA_LOCATION_KEYWORDS) ||
+        locationSuggestsDiaspora;
+      const isNigeriaBased =
+        includesAny(normalized, NIGERIA_LOCATION_KEYWORDS) ||
+        locationSuggestsNigeria;
       const isHni =
         normalized.includes('hni') || normalized.includes('high net worth');
 
