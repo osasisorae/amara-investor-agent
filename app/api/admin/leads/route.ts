@@ -88,12 +88,12 @@ function inferHistoricalSummary(messages: MessageRow[]) {
 
       if (
         hasFailureCue &&
-        (lower.includes('minimum investment horizon of 3 years') ||
-          lower.includes('3-year') ||
+        (lower.includes('minimum investment horizon of 5 years') ||
+          lower.includes('5-year') ||
           lower.includes('holding period'))
       ) {
         disqualificationReason =
-          'Not comfortable with the minimum 3-year investment horizon.';
+          'Not comfortable with the minimum 5-year investment horizon.';
       } else if (
         hasFailureCue &&
         (lower.includes('minimum ticket size') ||
@@ -138,7 +138,7 @@ function inferHistoricalSummary(messages: MessageRow[]) {
       ) {
         futureInterestNote = buildFutureInterestNote(
           message.content,
-          disqualificationReason?.includes('3-year')
+          disqualificationReason?.includes('5-year')
             ? 'investment_horizon'
             : undefined
         );

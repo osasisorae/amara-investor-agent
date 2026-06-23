@@ -248,40 +248,14 @@ export default function ChatPage() {
     return stageMap[stage] || stage;
   };
 
-  const starterPrompts = [
-    "I'm based in London and want to know if I qualify.",
-    "I'm comfortable with a 3-year holding period.",
-    'Can you walk me through the process step by step?',
-  ];
-  const shouldShowBinaryQuickReplies =
-    messages.length > 0 &&
-    (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') &&
-    qualificationState.expectsBinaryResponse;
-  const shouldShowLocationHint =
-    messages.length > 0 &&
-    (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') &&
-    qualificationState.currentQuestion === 'investor_profile';
+  const starterPrompts: string[] = [];
 
   const getInputPlaceholder = () => {
     if (lead?.stage === 'pending_human_review') {
       return 'Waiting for KYC review...';
     }
 
-    if (messages.length === 0) {
-      return "Start with where you're based and whether a 3-year horizon works for you...";
-    }
-
-    switch (qualificationState.currentQuestion) {
-      case 'investor_profile':
-        return "Tell Amara where you're based, for example: I'm based in London and work outside Nigeria.";
-      case 'ticket_size':
-        return 'Reply yes or no, or share your intended investment amount...';
-      case 'investment_horizon':
-      case 'kyc_willingness':
-        return 'Reply yes or no...';
-      default:
-        return 'Type your message...';
-    }
+    return 'Type your message...';
   };
 
   if (loading) {
@@ -325,39 +299,27 @@ export default function ChatPage() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
           {messages.length === 0 ? (
-            <div className="mx-auto max-w-xl rounded-[28px] border border-futurex-line bg-futurex-surface p-8 text-center shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
-              <div className="inline-block bg-futurex-gold-soft border border-futurex-gold-border text-futurex-gold text-sm px-4 py-2 rounded-full mb-4">
-                Start here
-              </div>
-              <h2 className="mb-3 font-serif text-2xl text-futurex-ink">
-                Start the conversation
-              </h2>
-              <p className="mx-auto max-w-lg text-futurex-muted">
-                Tell Amara where you&apos;re based, whether a 3-year holding period
-                works for you, and anything else that affects fit. That gives the
-                assistant enough context to qualify you properly.
-              </p>
-              <div className="mx-auto mt-6 max-w-md rounded-2xl border border-futurex-line bg-futurex-surface2 px-5 py-4 text-left">
-                <div className="text-[11px] tracking-[0.2em] uppercase text-futurex-muted">
-                  Good first message
+            <div className="mx-auto max-w-2xl rounded-[28px] border border-futurex-line bg-futurex-surface p-12 text-center shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
+              <div className="mb-6 flex items-center justify-center">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
+                  <Image
+                    src="/amara-icon-cropped.jpeg"
+                    alt="Amara"
+                    width={64}
+                    height={64}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
-                <p className="mt-2 text-sm text-futurex-ink">
-                  I&apos;m based in London and want to know if I qualify. I&apos;m still
-                  deciding whether a 3-year holding period works for me.
-                </p>
               </div>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {starterPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => applyStarterPrompt(prompt)}
-                    className="rounded-full border border-futurex-line bg-futurex-surface2 px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
+              <h2 className="mb-4 font-serif text-3xl text-futurex-ink">
+                Hi, I&apos;m Amara
+              </h2>
+              <p className="mx-auto max-w-md text-lg text-futurex-muted leading-relaxed">
+                I&apos;m here to help you understand if the Akwa Ibom Hospitality Vehicle is a good fit for you.
+              </p>
+              <p className="mx-auto mt-3 max-w-md text-futurex-muted">
+                This takes about 2 minutes. Just tell me where you&apos;re based to get started.
+              </p>
             </div>
           ) : (
             messages.map((msg) => (
@@ -471,39 +433,6 @@ export default function ChatPage() {
                   </button>
                 )}
               </div>
-            </div>
-          )}
-
-          {shouldShowLocationHint && (
-            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-sm text-futurex-muted">
-              Start by telling Amara where you&apos;re based. Example:
-              <span className="block pt-1 text-futurex-ink">
-                I&apos;m based in London and work outside Nigeria.
-              </span>
-            </div>
-          )}
-
-          {shouldShowBinaryQuickReplies && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
-                Quick reply
-              </span>
-              <button
-                type="button"
-                onClick={() => submitMessage('Yes')}
-                disabled={sending}
-                className="rounded-full border border-futurex-gold-border bg-futurex-gold-soft px-4 py-2 text-sm font-medium text-futurex-gold transition hover:opacity-90 disabled:opacity-50"
-              >
-                Yes
-              </button>
-              <button
-                type="button"
-                onClick={() => submitMessage('No')}
-                disabled={sending}
-                className="rounded-full border border-futurex-line bg-futurex-surface2 px-4 py-2 text-sm font-medium text-futurex-ink transition hover:border-rose-400 hover:text-rose-200 disabled:opacity-50"
-              >
-                No
-              </button>
             </div>
           )}
 

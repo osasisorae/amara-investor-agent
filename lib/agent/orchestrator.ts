@@ -143,37 +143,7 @@ export class AgentOrchestrator {
       });
     }
 
-    const conversationHistory = await getConversationHistory(lead.id);
-    const systemPrompt = getSystemPromptForStage('qualifying');
-
-    const response = await callQwenWithSystemPrompt(
-      systemPrompt,
-      message,
-      conversationHistory
-    );
-
-    if (failedQuestion && disqualificationReason) {
-      await logAuditEvent({
-        leadId: lead.id,
-        eventType: 'qualification_failed',
-        metadata: {
-          criterion: failedQuestion,
-          reason: disqualificationReason,
-          answer: message,
-        },
-      });
-
-      return {
-        message: response,
-        shouldUpdateStage: 'disqualified',
-        metadata: {
-          disqualified: true,
-          criterion: failedQuestion,
-          reason: disqualificationReason,
-        },
-      };
-    }
-
+    // Check if all criteria passed BEFORE generating AI response
     const allCriteriaPassed = QUALIFICATION_SEQUENCE.every(
       (question) => latestAnswers[question]?.passed === 1
     );
@@ -188,49 +158,52 @@ export class AgentOrchestrator {
       });
 
       return {
-        message: this.buildQualificationSuccessMessage(),
+        message: "You're in! 🎉 You're qualified for the deal room. I can answer questions about the investment whenever you're ready.",
         shouldUpdateStage: 'deal_room',
         metadata: { qualified: true },
       };
     }
 
-    const isQualified = this.detectQualificationComplete(response);
-    const isDisqualified = this.detectDisqualification(response);
-
-    if (isQualified) {
-      await logAuditEvent({
-        leadId: lead.id,
-        eventType: 'qualification_passed',
-      });
-
-      return {
-        message: response,
-        shouldUpdateStage: 'deal_room',
-        metadata: { qualified: true },
-      };
-    }
-
-    if (isDisqualified) {
-      const fallbackReason = currentQuestion
-        ? getDisqualificationReason(currentQuestion)
-        : 'AI identified this lead as not a fit for the current opportunity.';
-
+    // If disqualified, handle early
+    if (failedQuestion && disqualificationReason) {
       await logAuditEvent({
         leadId: lead.id,
         eventType: 'qualification_failed',
         metadata: {
-          criterion: currentQuestion,
-          reason: fallbackReason,
+          criterion: failedQuestion,
+          reason: disqualificationReason,
           answer: message,
         },
       });
 
+      const conversationHistory = await getConversationHistory(lead.id);
+      const systemPrompt = getSystemPromptForStage('qualifying');
+      const response = await callQwenWithSystemPrompt(
+        systemPrompt,
+        message,
+        conversationHistory
+      );
+
       return {
         message: response,
         shouldUpdateStage: 'disqualified',
-        metadata: { disqualified: true, reason: fallbackReason },
+        metadata: {
+          disqualified: true,
+          criterion: failedQuestion,
+          reason: disqualificationReason,
+        },
       };
     }
+
+    // Continue qualification conversation
+    const conversationHistory = await getConversationHistory(lead.id);
+    const systemPrompt = getSystemPromptForStage('qualifying');
+
+    const response = await callQwenWithSystemPrompt(
+      systemPrompt,
+      message,
+      conversationHistory
+    );
 
     return {
       message: response,
@@ -350,46 +323,6 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Helper: Detect if qualification is complete
-   */
-  private detectQualificationComplete(response: string): boolean {
-    const qualifiedKeywords = [
-      'congratulations',
-      'qualified',
-      'deal room',
-      'access granted',
-      'you meet the criteria',
-    ];
-
-    const lowerResponse = response.toLowerCase();
-    return qualifiedKeywords.some((keyword) =>
-      lowerResponse.includes(keyword)
-    );
-  }
-
-  /**
-   * Helper: Detect if investor was disqualified
-   */
-  private detectDisqualification(response: string): boolean {
-    const disqualifiedKeywords = [
-      "don't qualify",
-      'not eligible',
-      'cannot proceed',
-      'unfortunately',
-      'minimum requirement',
-      'not the right fit',
-      'isn’t the right fit',
-      "isn't the right fit",
-      'not a fit',
-    ];
-
-    const lowerResponse = response.toLowerCase();
-    return disqualifiedKeywords.some((keyword) =>
-      lowerResponse.includes(keyword)
-    );
-  }
-
-  /**
    * Helper: Detect if investor is ready for KYC
    */
   private detectKYCReadiness(message: string): boolean {
@@ -405,19 +338,7 @@ export class AgentOrchestrator {
     const lowerMessage = message.toLowerCase();
     return kycKeywords.some((keyword) => lowerMessage.includes(keyword));
   }
-
-  private buildQualificationSuccessMessage(): string {
-    return `You’ve now met all four qualification criteria:
-
-- Nigerian diaspora or verified local HNI status confirmed
-- Minimum 3-year investment horizon confirmed
-- Minimum ticket size confirmed
-- KYC readiness confirmed
-
-Your FutureX deal room access is now active in this same conversation. I can walk you through the opportunity summary, key economics, risks, and next onboarding steps.
-
-If you’d like, I can start with a brief overview of what to expect in the deal room.`;
-  }
 }
 
 export const orchestrator = new AgentOrchestrator();
+

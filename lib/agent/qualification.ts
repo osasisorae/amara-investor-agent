@@ -186,7 +186,7 @@ export function getDisqualificationReason(question: QualificationQuestion): stri
     case 'investor_profile':
       return 'Does not meet the diaspora or verified local HNI requirement.';
     case 'investment_horizon':
-      return 'Not comfortable with the minimum 3-year investment horizon.';
+      return 'Not comfortable with the minimum 5-year investment horizon.';
     case 'ticket_size':
       return 'Below the minimum ticket size of NGN 5M (or USD equivalent).';
     case 'kyc_willingness':
@@ -253,26 +253,26 @@ export function assessQualificationResponse(
     case 'investment_horizon': {
       const years = parseDurationInYears(message);
 
-      if (binaryIntent === 'no' || (years !== null && years < 3)) {
+      if (binaryIntent === 'no' || (years !== null && years < 5)) {
         return {
           question,
           matched: true,
           passed: false,
           reason: getDisqualificationReason(question),
-          summary: 'Investor is not comfortable with the minimum 3-year horizon.',
+          summary: 'Investor is not comfortable with the minimum 5-year horizon.',
         };
       }
 
       if (
         binaryIntent === 'yes' ||
         normalized.includes('long term') ||
-        (years !== null && years >= 3)
+        (years !== null && years >= 5)
       ) {
         return {
           question,
           matched: true,
           passed: true,
-          summary: 'Investor is comfortable with a 3-year or longer horizon.',
+          summary: 'Investor is comfortable with a 5-year or longer horizon.',
         };
       }
 
@@ -403,7 +403,7 @@ export function summarizeQualificationAnswer(
   }
 
   if (question === 'investment_horizon' && passed === 0) {
-    return 'Investor is not comfortable with the minimum 3-year horizon.';
+    return 'Investor is not comfortable with the minimum 5-year horizon.';
   }
 
   if (question === 'ticket_size' && passed === 0) {
