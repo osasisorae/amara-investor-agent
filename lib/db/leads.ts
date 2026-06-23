@@ -175,7 +175,6 @@ export async function markKYCSubmitted(leadId: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await execute(
     `UPDATE leads SET 
-      stage = 'pending_human_review', 
       kyc_submitted_at = ?,
       updated_at = ?
      WHERE id = ?`,
@@ -240,7 +239,6 @@ export async function markAgreementSigned(leadId: string): Promise<void> {
   await execute(
     `UPDATE leads SET
       agreement_signed_at = COALESCE(agreement_signed_at, ?),
-      stage = 'agreement_signed',
       updated_at = ?
      WHERE id = ?`,
     [now, now, leadId]

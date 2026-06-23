@@ -307,6 +307,43 @@ ${TEXT_EMAIL_FOOTER}
   return { subject, html, text };
 }
 
+export function getInvestorAccessOtpEmailTemplate(params: {
+  investorName: string;
+  otpCode: string;
+  expiryMinutes: number;
+}): { subject: string; html: string; text: string } {
+  const subject = 'Your FutureX investor access code';
+
+  const html = renderEmailLayout(
+    `
+      <h2>Hello ${params.investorName},</h2>
+
+      <p>Use the verification code below to reopen your FutureX investor conversation.</p>
+
+      <div class="alert" style="font-size: 24px; letter-spacing: 0.2em; font-weight: 700;">
+        ${params.otpCode}
+      </div>
+
+      <p>This code expires in ${params.expiryMinutes} minutes. If you did not request it, you can safely ignore this email.</p>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+Hello ${params.investorName},
+
+Use the verification code below to reopen your FutureX investor conversation:
+
+${params.otpCode}
+
+This code expires in ${params.expiryMinutes} minutes.
+
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
 export function getAdminHumanReviewEmailTemplate(params: {
   investorEmail: string;
   leadId: string;

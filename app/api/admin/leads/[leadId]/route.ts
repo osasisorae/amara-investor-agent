@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteLeadCascade } from '@/lib/db/leads';
+import { verifyAdminSession } from '@/lib/admin-auth';
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { leadId } = params;
 
     const lead = await deleteLeadCascade(leadId);

@@ -5,6 +5,7 @@ import {
   buildAgreementHashInput,
   getAgreementMarkdown,
 } from '@/lib/agreement/template';
+import { applyOrchestratorStageTransition } from '@/lib/agent/orchestrator';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
   getLeadById,
@@ -95,6 +96,7 @@ export async function POST(
       full_name: fullName,
     });
     await markAgreementSigned(leadId);
+    await applyOrchestratorStageTransition(leadId, 'agreement_signed');
     await logAuditEvent({
       leadId,
       eventType: 'agreement_signed',
@@ -119,6 +121,7 @@ export async function POST(
         full_name: fullName,
         stage: 'agreement_signed',
       });
+      await applyOrchestratorStageTransition(leadId, 'payment_pending');
       paymentReference = paymentResult.paymentReference;
       nextStage = 'payment_pending';
     } catch (paymentError) {

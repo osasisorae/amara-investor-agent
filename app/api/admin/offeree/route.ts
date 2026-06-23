@@ -5,6 +5,7 @@ import { createLead } from '@/lib/db/leads';
 import { logAuditEvent } from '@/lib/db/audit';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getOutreachEmailTemplate } from '@/lib/email/templates';
+import { verifyAdminSession } from '@/lib/admin-auth';
 
 interface OffereeRegisterRow {
   id: string;
@@ -13,13 +14,19 @@ interface OffereeRegisterRow {
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, fullName, notes, addedBy } = await request.json();
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { email, fullName, notes } = await request.json();
+    const addedBy = session.email;
     const normalizedEmail =
       typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!normalizedEmail || !addedBy) {
+    if (!normalizedEmail) {
       return NextResponse.json(
-        { error: 'Email and addedBy are required' },
+        { error: 'Email is required' },
         { status: 400 }
       );
     }
@@ -103,8 +110,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const offerees = await query(
       'SELECT * FROM offeree_register ORDER BY added_at DESC'
     );

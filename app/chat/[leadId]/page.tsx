@@ -20,16 +20,6 @@ interface Lead {
   kyc_submitted_at?: number;
 }
 
-interface QualificationState {
-  currentQuestion:
-    | 'investor_profile'
-    | 'investment_horizon'
-    | 'ticket_size'
-    | 'kyc_willingness'
-    | null;
-  expectsBinaryResponse: boolean;
-}
-
 function getStarterPrompts(stage: string): string[] {
   if (stage === 'deal_room') {
     return [
@@ -193,11 +183,6 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [qualificationState, setQualificationState] =
-    useState<QualificationState>({
-      currentQuestion: null,
-      expectsBinaryResponse: false,
-    });
 
   useEffect(() => {
     loadChat();
@@ -211,6 +196,11 @@ export default function ChatPage() {
     () => getStarterPrompts(lead?.stage || 'outreach_sent'),
     [lead?.stage]
   );
+  const latestMessage = messages.at(-1);
+  const shouldShowStarterPrompts = messages.length === 0;
+  const shouldShowBinaryQuickReplies =
+    latestMessage?.role === 'agent' &&
+    latestMessage.metadata?.expectsBinaryResponse === true;
 
   const disableInput =
     sending ||
@@ -233,12 +223,6 @@ export default function ChatPage() {
 
       setMessages(data.messages || []);
       setLead(data.lead);
-      setQualificationState(
-        data.qualificationState || {
-          currentQuestion: null,
-          expectsBinaryResponse: false,
-        }
-      );
     } catch (error) {
       console.error('Failed to load chat:', error);
       notify({
@@ -300,13 +284,6 @@ export default function ChatPage() {
       if (data.stage && lead) {
         setLead({ ...lead, stage: data.stage });
       }
-
-      setQualificationState(
-        data.qualificationState || {
-          currentQuestion: null,
-          expectsBinaryResponse: false,
-        }
-      );
     } catch (error) {
       console.error('Failed to send message:', error);
       setMessages((current) =>
@@ -401,7 +378,7 @@ export default function ChatPage() {
       if (lead) {
         setLead({
           ...lead,
-          stage: 'pending_human_review',
+          stage: data.stage || 'pending_human_review',
           kyc_submitted_at: Math.floor(Date.now() / 1000),
         });
       }
@@ -498,7 +475,7 @@ export default function ChatPage() {
   };
 
   const renderAgentContent = (message: ChatMessage) => {
-    if (!message.metadata) {
+    if (message.type === 'text') {
       return (
         <div
           className="markdown-content whitespace-pre-wrap"
@@ -511,17 +488,21 @@ export default function ChatPage() {
 
     switch (message.type) {
       case 'deal_card':
-        return renderDealCard(message.metadata.data as DealCardComponentData);
+        return renderDealCard(
+          message.metadata?.data as DealCardComponentData
+        );
       case 'document_list':
         return renderDocumentList(
-          message.metadata.data as DocumentListComponentData
+          message.metadata?.data as DocumentListComponentData
         );
       case 'pipeline_status':
         return renderPipelineStatus(
-          message.metadata.data as PipelineStatusComponentData
+          message.metadata?.data as PipelineStatusComponentData
         );
       case 'kyc_prompt':
-        return renderKycPrompt(message.metadata.data as KycPromptComponentData);
+        return renderKycPrompt(
+          message.metadata?.data as KycPromptComponentData
+        );
       default:
         return (
           <div
@@ -554,13 +535,18 @@ export default function ChatPage() {
     <div className="flex h-screen flex-col bg-futurex-bg">
       <header className="border-b border-futurex-line bg-futurex-surface">
         <div className="mx-auto w-full max-w-4xl px-6 py-4">
-          <Image
-            src="/amara-wordmark-cropped.jpeg"
-            alt="Amara"
-            width={154}
-            height={48}
-            className="h-auto w-[132px] sm:w-[154px]"
-          />
+          <div>
+            <Image
+              src="/amara-wordmark-cropped.jpeg"
+              alt="Amara"
+              width={154}
+              height={48}
+              className="h-auto w-[132px] sm:w-[154px]"
+            />
+            <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-futurex-muted">
+              by FutureX
+            </div>
+          </div>
         </div>
       </header>
 
@@ -614,7 +600,7 @@ export default function ChatPage() {
 
       <footer className="border-t border-futurex-line bg-futurex-surface">
         <div className="mx-auto w-full max-w-4xl px-6 py-4">
-          {starterPrompts.length > 0 && (
+          {shouldShowStarterPrompts && starterPrompts.length > 0 && (
             <div className="mb-4 flex flex-wrap gap-2">
               {starterPrompts.map((prompt) => (
                 <button
@@ -629,27 +615,26 @@ export default function ChatPage() {
             </div>
           )}
 
-          {qualificationState.expectsBinaryResponse &&
-            (lead.stage === 'outreach_sent' || lead.stage === 'qualifying') && (
-              <div className="mb-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => submitMessage('Yes')}
-                  disabled={sending}
-                  className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => submitMessage('No')}
-                  disabled={sending}
-                  className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
-                >
-                  No
-                </button>
-              </div>
-            )}
+          {shouldShowBinaryQuickReplies ? (
+            <div className="mb-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => submitMessage('Yes')}
+                disabled={sending}
+                className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => submitMessage('No')}
+                disabled={sending}
+                className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          ) : null}
 
           <form onSubmit={sendMessage} className="flex gap-3">
             <input

@@ -5,19 +5,26 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useFeedback } from '@/components/feedback-provider';
 
+const GENERIC_ACCESS_MESSAGE =
+  "If your email is in our system, you'll receive an access code shortly.";
+
 export default function ChatAccessPage() {
   const router = useRouter();
   const { notify } = useFeedback();
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [requestingCode, setRequestingCode] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const submit = async (event: React.FormEvent) => {
+  const requestAccessCode = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email.trim()) {
       return;
     }
 
-    setLoading(true);
+    setRequestingCode(true);
     try {
       const response = await fetch('/api/chat/access', {
         method: 'POST',
@@ -28,10 +35,50 @@ export default function ChatAccessPage() {
 
       if (!response.ok) {
         notify({
-          title: 'Access not found',
-          message:
-            data.error ||
-            'We could not find an active conversation for that email address.',
+          title: 'Access unavailable',
+          message: data.error || 'Failed to send access code.',
+          tone: 'error',
+        });
+        return;
+      }
+
+      setOtpRequested(true);
+      setOtpCode('');
+      setStatusMessage(data.message || GENERIC_ACCESS_MESSAGE);
+    } catch (error) {
+      console.error('Failed to request investor chat access:', error);
+      notify({
+        title: 'Access unavailable',
+        message: 'Failed to send access code.',
+        tone: 'error',
+      });
+    } finally {
+      setRequestingCode(false);
+    }
+  };
+
+  const verifyAccessCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!email.trim() || !otpCode.trim()) {
+      return;
+    }
+
+    setVerifyingCode(true);
+    try {
+      const response = await fetch('/api/chat/access', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          code: otpCode,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        notify({
+          title: 'Code not accepted',
+          message: data.error || 'Invalid or expired access code.',
           tone: 'error',
         });
         return;
@@ -39,14 +86,14 @@ export default function ChatAccessPage() {
 
       router.push(`/chat/${data.leadId}`);
     } catch (error) {
-      console.error('Failed to recover investor chat:', error);
+      console.error('Failed to verify investor chat access:', error);
       notify({
-        title: 'Access unavailable',
-        message: 'Failed to recover investor chat.',
+        title: 'Verification failed',
+        message: 'Failed to verify access code.',
         tone: 'error',
       });
     } finally {
-      setLoading(false);
+      setVerifyingCode(false);
     }
   };
 
@@ -78,12 +125,12 @@ export default function ChatAccessPage() {
             Open your investor chat
           </h1>
           <p className="mt-4 text-base leading-7 text-futurex-muted">
-            Enter the email address that received your FutureX outreach. If
-            you&apos;re already in the offeree register, we&apos;ll take you straight
-            back to your Amara conversation.
+            Enter the email address that received your FutureX outreach. We&apos;ll
+            send a one-time access code to that inbox before reopening your
+            Amara conversation.
           </p>
 
-          <form onSubmit={submit} className="mt-8 space-y-4">
+          <form onSubmit={requestAccessCode} className="mt-8 space-y-4">
             <label className="block">
               <span className="mb-2 block text-sm text-futurex-muted">
                 Investor email
@@ -98,12 +145,47 @@ export default function ChatAccessPage() {
             </label>
             <button
               type="submit"
-              disabled={loading || !email.trim()}
+              disabled={requestingCode || verifyingCode || !email.trim()}
               className="w-full rounded-full bg-futurex-gold px-4 py-3 font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
             >
-              {loading ? 'Checking...' : 'Open my conversation'}
+              {requestingCode
+                ? 'Sending code...'
+                : otpRequested
+                  ? 'Send another code'
+                  : 'Send access code'}
             </button>
           </form>
+
+          {statusMessage ? (
+            <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-sm text-futurex-muted">
+              {statusMessage}
+            </div>
+          ) : null}
+
+          {otpRequested ? (
+            <form onSubmit={verifyAccessCode} className="mt-6 space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-sm text-futurex-muted">
+                  Access code
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(event.target.value)}
+                  className="w-full rounded-xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-futurex-ink outline-none transition focus:border-futurex-gold"
+                  placeholder="Enter 6-digit code"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={verifyingCode || !email.trim() || !otpCode.trim()}
+                className="w-full rounded-full border border-futurex-line px-4 py-3 font-semibold text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
+              >
+                {verifyingCode ? 'Verifying...' : 'Verify and continue'}
+              </button>
+            </form>
+          ) : null}
         </div>
       </main>
     </div>

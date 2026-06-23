@@ -3,18 +3,28 @@ import { getLeadById, approveKYC, rejectKYC } from '@/lib/db/leads';
 import { logAuditEvent } from '@/lib/db/audit';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getKYCApprovalEmailTemplate } from '@/lib/email/templates';
+import { verifyAdminSession } from '@/lib/admin-auth';
 
+// Stage ownership rule: only lib/agent/orchestrator.ts and the admin KYC/payment
+// endpoints may write leads.stage. This route owns admin KYC approve/reject changes.
 export async function POST(
   request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
-    const { leadId } = params;
-    const { action, approvedBy } = await request.json();
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    if (!action || !approvedBy) {
+    const { leadId } = params;
+    const body = await request.json();
+    const action = typeof body.action === 'string' ? body.action.trim() : '';
+    const approvedBy = session.email;
+
+    if (!action) {
       return NextResponse.json(
-        { error: 'Action and approvedBy are required' },
+        { error: 'Action is required' },
         { status: 400 }
       );
     }

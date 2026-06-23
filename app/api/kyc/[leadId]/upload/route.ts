@@ -6,6 +6,7 @@ import {
   createComponentMetadata,
   getComponentFallbackText,
 } from '@/lib/chat/components';
+import { applyOrchestratorStageTransition } from '@/lib/agent/orchestrator';
 import { toChatMessages } from '@/lib/chat/messages';
 import { getLeadById, markKYCSubmitted } from '@/lib/db/leads';
 import { execute, queryOne } from '@/lib/db/client';
@@ -125,6 +126,7 @@ export async function PATCH(
 
     // Mark as submitted and move to pending review
     await markKYCSubmitted(leadId);
+    await applyOrchestratorStageTransition(leadId, 'pending_human_review');
 
     // Log audit event
     await logAuditEvent({
@@ -153,6 +155,7 @@ export async function PATCH(
 
     return NextResponse.json({
       success: true,
+      stage: 'pending_human_review',
       message: 'KYC submitted for review',
       messages: toChatMessages(agentMessages),
     });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteLeadCascade, getAllLeads } from '@/lib/db/leads';
 import { query } from '@/lib/db/client';
+import { verifyAdminSession } from '@/lib/admin-auth';
 import {
   buildFutureInterestNote,
   detectFutureInterestRequest,
@@ -153,47 +154,13 @@ function inferHistoricalSummary(messages: MessageRow[]) {
   };
 }
 
-function inferStageFromMessages(
-  messages: MessageRow[]
-): 'deal_room' | 'disqualified' | null {
-  const latestAgentMessage = [...messages]
-    .reverse()
-    .find((message) => message.role === 'agent');
-
-  if (!latestAgentMessage) {
-    return null;
-  }
-
-  const lower = latestAgentMessage.content.toLowerCase();
-  const allAgentContent = messages
-    .filter((message) => message.role === 'agent')
-    .map((message) => message.content.toLowerCase())
-    .join('\n');
-
-  if (
-    lower.includes("you're in") ||
-    lower.includes('qualified for the deal room') ||
-    lower.includes('deal room access is now active') ||
-    allAgentContent.includes('[ui:deal_card]') ||
-    allAgentContent.includes('[ui:kyc_prompt]')
-  ) {
-    return 'deal_room';
-  }
-
-  if (
-    lower.includes('not the right fit') ||
-    lower.includes('not eligible') ||
-    lower.includes('cannot proceed') ||
-    lower.includes('not a fit')
-  ) {
-    return 'disqualified';
-  }
-
-  return null;
-}
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const leads = await getAllLeads();
     const qualificationAnswers = await query<QualificationAnswerRow>(
       `SELECT lead_id, question, answer, passed, created_at
@@ -309,39 +276,34 @@ export async function GET() {
       const paymentReceivedMetadata = parseMetadata(paymentReceivedEvent?.metadata);
       const leadMessages = messagesByLead.get(lead.id) || [];
       const historicalSummary = inferHistoricalSummary(leadMessages);
-      const inferredStage = inferStageFromMessages(leadMessages);
       const failedQuestion = QUALIFICATION_SEQUENCE.find(
         (question) => latestAnswers[question]?.passed === 0
       );
       const hasPassedAllCriteria = QUALIFICATION_SEQUENCE.every(
         (question) => latestAnswers[question]?.passed === 1
       );
+      const isDisqualifiedLead = lead.stage === 'disqualified';
       const isQualifiedLead =
-        hasPassedAllCriteria ||
-        QUALIFIED_STAGES.has(lead.stage) ||
-        inferredStage === 'deal_room';
-      const resolvedDisqualificationReason = isQualifiedLead
-        ? null
-        : failedMetadata?.reason ||
+        !isDisqualifiedLead &&
+        (hasPassedAllCriteria || QUALIFIED_STAGES.has(lead.stage));
+      const resolvedDisqualificationReason = isDisqualifiedLead
+        ? failedMetadata?.reason ||
           (failedQuestion ? getDisqualificationReason(failedQuestion) : null) ||
           historicalSummary.disqualificationReason ||
-          null;
-      const resolvedFutureInterestNote = isQualifiedLead
-        ? null
-        : futureInterestMetadata?.note || historicalSummary.futureInterestNote || null;
-      const effectiveStage =
-        inferredStage === 'deal_room'
-          ? 'deal_room'
-          : !isQualifiedLead &&
-              (lead.stage === 'disqualified' ||
-                inferredStage === 'disqualified' ||
-                resolvedDisqualificationReason)
-            ? 'disqualified'
-            : lead.stage;
+          null
+        : isQualifiedLead
+          ? null
+          : failedMetadata?.reason ||
+            (failedQuestion ? getDisqualificationReason(failedQuestion) : null) ||
+            historicalSummary.disqualificationReason ||
+            null;
+      const resolvedFutureInterestNote = isDisqualifiedLead
+        ? futureInterestMetadata?.note || historicalSummary.futureInterestNote || null
+        : null;
 
       return {
         ...lead,
-        stage: effectiveStage,
+        stage: lead.stage,
         country: lead.country || historicalSummary.location || undefined,
         qualificationSummary: {
           investorProfile: latestAnswers.investor_profile
@@ -410,6 +372,11 @@ export async function GET() {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const leadId = searchParams.get('leadId');
 

@@ -235,6 +235,20 @@ export interface OrchestratorResponse {
   shouldUpdateStage?: LeadStage;
 }
 
+// Stage ownership rule: lib/agent/orchestrator.ts is the only non-admin writer
+// of leads.stage. Admin exceptions live in app/api/admin/kyc/[leadId]/route.ts
+// and app/api/admin/payment/[leadId]/route.ts.
+export async function applyOrchestratorStageTransition(
+  leadId: string,
+  newStage: LeadStage
+): Promise<void> {
+  await updateLeadStage(leadId, newStage);
+
+  if (newStage === 'deal_room') {
+    await markLeadQualified(leadId);
+  }
+}
+
 function isLeadStage(value: string): value is LeadStage {
   return LEAD_STAGES.includes(value as LeadStage);
 }
@@ -264,6 +278,14 @@ function formatEmailBodyAsHtml(body: string): string {
         `<p>${escapeHtml(paragraph).replace(/\n/g, '<br/>')}</p>`
     )
     .join('');
+}
+
+function requiresBinaryResponse(question: QualificationQuestion): boolean {
+  return (
+    question === 'ticket_size' ||
+    question === 'investment_horizon' ||
+    question === 'kyc_willingness'
+  );
 }
 
 function normalizeOrigin(appUrl?: string): string {
@@ -466,7 +488,7 @@ export class AgentOrchestrator {
     );
 
     if (allCriteriaPassed) {
-      await markLeadQualified(lead.id);
+      await applyOrchestratorStageTransition(lead.id, 'deal_room');
       await logAuditEvent({
         leadId: lead.id,
         eventType: 'qualification_passed',
@@ -482,6 +504,7 @@ export class AgentOrchestrator {
     }
 
     if (failedQuestion && disqualificationReason) {
+      await applyOrchestratorStageTransition(lead.id, 'disqualified');
       await logAuditEvent({
         leadId: lead.id,
         eventType: 'qualification_failed',
@@ -513,6 +536,11 @@ export class AgentOrchestrator {
     const nextQuestion = getNextQualificationQuestion(
       Object.keys(latestAnswers)
     );
+    const shouldUpdateStage = lead.stage === 'outreach_sent' ? 'qualifying' : undefined;
+
+    if (shouldUpdateStage) {
+      await applyOrchestratorStageTransition(lead.id, shouldUpdateStage);
+    }
 
     return {
       emissions: [
@@ -521,10 +549,11 @@ export class AgentOrchestrator {
             message,
             currentAssessment,
             nextQuestion
-          )
+          ),
+          this.buildQualificationPromptMetadata(nextQuestion)
         ),
       ],
-      shouldUpdateStage: lead.stage === 'outreach_sent' ? 'qualifying' : undefined,
+      shouldUpdateStage,
     };
   }
 
@@ -792,11 +821,7 @@ export class AgentOrchestrator {
           throw new Error(`Invalid lead stage: ${newStage}`);
         }
 
-        await updateLeadStage(lead.id, newStage);
-
-        if (newStage === 'deal_room') {
-          await markLeadQualified(lead.id);
-        }
+        await applyOrchestratorStageTransition(lead.id, newStage);
 
         return {
           content: JSON.stringify({
@@ -840,7 +865,7 @@ export class AgentOrchestrator {
       case 'flag_for_human_review': {
         const reason = this.requireString(args, 'reason');
 
-        await updateLeadStage(lead.id, 'pending_human_review');
+        await applyOrchestratorStageTransition(lead.id, 'pending_human_review');
         await logAuditEvent({
           leadId: lead.id,
           eventType: 'human_review_requested',
@@ -1131,6 +1156,19 @@ export class AgentOrchestrator {
     }
 
     return "Tell me a bit more about your situation, and I'll guide you through the next step.";
+  }
+
+  private buildQualificationPromptMetadata(
+    nextQuestion: QualificationQuestion | null
+  ): Record<string, unknown> | undefined {
+    if (!nextQuestion || !requiresBinaryResponse(nextQuestion)) {
+      return undefined;
+    }
+
+    return {
+      qualificationQuestion: nextQuestion,
+      expectsBinaryResponse: true,
+    };
   }
 
   private buildNextQualificationQuestion(

@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logAuditEvent } from '@/lib/db/audit';
 import { getLeadById, updateLeadStage } from '@/lib/db/leads';
+import { verifyAdminSession } from '@/lib/admin-auth';
 
+// Stage ownership rule: only lib/agent/orchestrator.ts and the admin KYC/payment
+// endpoints may write leads.stage. This route owns payment confirmation changes.
 export async function POST(
   request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
-    const { leadId } = params;
-    const body = await request.json();
-    const confirmedBy =
-      typeof body.confirmedBy === 'string' ? body.confirmedBy.trim() : '';
-
-    if (!confirmedBy) {
-      return NextResponse.json(
-        { error: 'confirmedBy is required' },
-        { status: 400 }
-      );
+    const session = await verifyAdminSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { leadId } = params;
+    const confirmedBy = session.email;
 
     const lead = await getLeadById(leadId);
 

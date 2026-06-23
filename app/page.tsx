@@ -6,22 +6,19 @@ export default function Home() {
     <div className="min-h-screen bg-futurex-bg flex flex-col">
       {/* Header */}
       <header className="border-b border-futurex-line">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div className="rounded-xl bg-[#fffdf8] px-3 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+        <div className="max-w-7xl mx-auto px-6 py-5">
+          <div>
             <Image
-              src="/futurex-wordmark-email.png"
-              alt="FutureX"
-              width={132}
-              height={74}
-              className="h-7 w-auto"
+              src="/amara-wordmark-cropped.jpeg"
+              alt="Amara"
+              width={154}
+              height={48}
+              className="h-auto w-[132px] sm:w-[154px]"
             />
+            <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-futurex-muted">
+              by FutureX
+            </div>
           </div>
-          <Link
-            href="/admin"
-            className="text-sm text-futurex-muted hover:text-futurex-gold transition"
-          >
-            Admin Login
-          </Link>
         </div>
       </header>
 
@@ -35,68 +32,34 @@ export default function Home() {
 
           {/* Main Heading */}
           <h1 className="font-serif text-5xl md:text-6xl text-futurex-ink mb-6 leading-tight">
-            Your AI-Powered
-            <br />
-            <span className="text-futurex-gold">Investor Onboarding</span>
-            <br />
-            Agent
+            The investor onboarding agent for{" "}
+            <span className="text-futurex-gold">FutureX</span>
           </h1>
 
           {/* Subheading */}
           <p className="text-lg text-futurex-muted max-w-2xl mx-auto mb-10 leading-relaxed">
-            Amara qualifies investors, serves deal room materials, triages KYC,
-            and captures a complete audit trail — all while enforcing
-            human-in-the-loop compliance checkpoints required by Nigerian law.
+            Amara guides Nigerian diaspora investors through the full journey — from first conversation to signed agreement — while keeping humans in control at every critical decision point.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          {/* CTA Button */}
+          <div className="flex justify-center">
             <Link
               href="/chat"
               className="bg-futurex-gold text-futurex-bg font-semibold px-8 py-3 rounded-lg hover:opacity-90 transition"
             >
               Start as Investor →
             </Link>
-            <Link
-              href="/admin"
-              className="border border-futurex-line text-futurex-muted font-semibold px-8 py-3 rounded-lg hover:border-futurex-gold hover:text-futurex-gold transition"
-            >
-              Admin Dashboard
-            </Link>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-1 bg-futurex-line border border-futurex-line mt-16 max-w-2xl mx-auto">
-            <div className="bg-futurex-surface2 p-6">
-              <div className="font-mono text-3xl text-futurex-ink">8</div>
-              <div className="text-xs text-futurex-muted uppercase tracking-wider mt-1">
-                Stage Pipeline
-              </div>
-            </div>
-            <div className="bg-futurex-surface2 p-6">
-              <div className="font-mono text-3xl text-futurex-ink">2</div>
-              <div className="text-xs text-futurex-muted uppercase tracking-wider mt-1">
-                Human Checkpoints
-              </div>
-            </div>
-            <div className="bg-futurex-surface2 p-6">
-              <div className="font-mono text-3xl text-futurex-gold">100%</div>
-              <div className="text-xs text-futurex-muted uppercase tracking-wider mt-1">
-                Audit Trail
-              </div>
-            </div>
           </div>
         </div>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-futurex-line">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between text-sm text-futurex-muted">
-          <div>
-            <strong className="text-futurex-ink">FutureX</strong> · Qwen Cloud
-            Hackathon 2026
+        <div className="max-w-7xl mx-auto px-6 py-5 text-center text-sm text-futurex-muted">
+          <div className="mb-2">
+            <strong className="text-futurex-ink">Built on Qwen Cloud</strong> · FutureX Nexus Development Limited
           </div>
-          <div>Built by Osas Isorae</div>
+          <div>Qwen Cloud Hackathon 2026 · Built by Osas Isorae</div>
         </div>
       </footer>
     </div>

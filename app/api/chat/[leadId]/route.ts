@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toChatMessages } from '@/lib/chat/messages';
-import { getLeadById, updateLeadStage, type Lead, type LeadStage } from '@/lib/db/leads';
+import { getLeadById } from '@/lib/db/leads';
 import { getMessagesByLeadId } from '@/lib/db/messages';
 import {
   getLatestQualificationAnswerMap,
@@ -19,71 +19,6 @@ const BINARY_QUALIFICATION_QUESTIONS = new Set<QualificationQuestion>([
   'ticket_size',
   'kyc_willingness',
 ]);
-
-function inferLeadStageFromMessages(
-  lead: Lead,
-  messages: Array<{ role: 'agent' | 'investor'; content: string }>
-): LeadStage | null {
-  if (
-    lead.stage !== 'outreach_sent' &&
-    lead.stage !== 'qualifying' &&
-    lead.stage !== 'disqualified'
-  ) {
-    return null;
-  }
-
-  const latestAgentMessage = [...messages]
-    .reverse()
-    .find((message) => message.role === 'agent');
-
-  if (!latestAgentMessage) {
-    return null;
-  }
-
-  const lower = latestAgentMessage.content.toLowerCase();
-  const allAgentContent = messages
-    .filter((message) => message.role === 'agent')
-    .map((message) => message.content.toLowerCase())
-    .join('\n');
-
-  if (
-    lower.includes("you're in") ||
-    lower.includes('qualified for the deal room') ||
-    lower.includes('deal room access is now active') ||
-    allAgentContent.includes('[ui:deal_card]') ||
-    allAgentContent.includes('[ui:kyc_prompt]')
-  ) {
-    return 'deal_room';
-  }
-
-  if (
-    lower.includes('not the right fit') ||
-    lower.includes('not eligible') ||
-    lower.includes('cannot proceed') ||
-    lower.includes('not a fit')
-  ) {
-    return 'disqualified';
-  }
-
-  return null;
-}
-
-async function reconcileLeadStage(
-  lead: Lead,
-  messages: Array<{ role: 'agent' | 'investor'; content: string }>
-): Promise<Lead> {
-  const inferredStage = inferLeadStageFromMessages(lead, messages);
-
-  if (!inferredStage || inferredStage === lead.stage) {
-    return lead;
-  }
-
-  await updateLeadStage(lead.id, inferredStage);
-  return {
-    ...lead,
-    stage: inferredStage,
-  };
-}
 
 async function getQualificationState(
   leadId: string,
@@ -113,19 +48,18 @@ async function getQualificationState(
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
     const { leadId } = params;
 
-    let lead = await getLeadById(leadId);
+    const lead = await getLeadById(leadId);
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
     const messages = await getMessagesByLeadId(leadId);
-    lead = await reconcileLeadStage(lead, messages);
     const qualificationState = await getQualificationState(leadId, lead.stage);
 
     return NextResponse.json({
@@ -157,13 +91,10 @@ export async function POST(
       );
     }
 
-    let lead = await getLeadById(leadId);
+    const lead = await getLeadById(leadId);
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
-
-    const existingMessages = await getMessagesByLeadId(leadId);
-    lead = await reconcileLeadStage(lead, existingMessages);
 
     // Process message through agent orchestrator
     const appUrl =
@@ -174,15 +105,12 @@ export async function POST(
       appUrl,
     });
 
-    // Update stage if needed
-    if (response.shouldUpdateStage) {
-      await updateLeadStage(leadId, response.shouldUpdateStage);
-    }
-
-    const nextStage = response.shouldUpdateStage || lead.stage;
+    // Stage is persisted by the orchestrator or explicit admin routes only.
+    const updatedLead = (await getLeadById(leadId)) || lead;
+    const nextStage = updatedLead.stage;
     const qualificationState = await getQualificationState(leadId, nextStage);
 
-    if (response.shouldUpdateStage === 'deal_room' && lead.stage !== 'deal_room') {
+    if (updatedLead.stage === 'deal_room' && lead.stage !== 'deal_room') {
       const chatLink = `${appUrl}/chat/${lead.id}`;
       const emailTemplate = getDealRoomAccessEmailTemplate({
         investorName: lead.full_name || 'there',

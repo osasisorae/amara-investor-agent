@@ -2,7 +2,6 @@ import { MINIMUM_TICKET_NGN, parseMoneyValue } from '@/lib/agent/qualification';
 import { SPV_CODE } from '@/lib/agreement/template';
 import { logAuditEvent } from '@/lib/db/audit';
 import type { Lead } from '@/lib/db/leads';
-import { updateLeadStage } from '@/lib/db/leads';
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getPaymentInstructionsEmailTemplate } from '@/lib/email/templates';
@@ -103,8 +102,6 @@ export async function triggerPaymentInstructions(
       deadline: deadlineLabel,
     },
   });
-
-  await updateLeadStage(lead.id, 'payment_pending');
 
   return {
     paymentReference,
