@@ -2,7 +2,7 @@ export function getOutreachEmailTemplate(params: {
   investorEmail: string;
   chatLink: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'Welcome to FutureX — Let's Start the Conversation';
+  const subject = 'Welcome to FutureX - Let\'s Start the Conversation';
 
   const html = `
 <!DOCTYPE html>
@@ -31,7 +31,7 @@ export function getOutreachEmailTemplate(params: {
       
       <p>Your email was recently added to our investor offeree register by the FutureX team. I wanted to personally reach out and introduce myself.</p>
       
-      <p>I'm <strong class="gold">Amara</strong>, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity — the <strong>Akwa Ibom Hospitality Vehicle</strong> — answer your questions, and make the entire process as smooth and transparent as possible.</p>
+      <p>I'm <strong class="gold">Amara</strong>, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity - the <strong>Akwa Ibom Hospitality Vehicle</strong> - answer your questions, and make the entire process as smooth and transparent as possible.</p>
       
       <p>Here's what I'll help you with:</p>
       <ul>
@@ -67,7 +67,7 @@ Hi there,
 
 Your email was recently added to our investor offeree register by the FutureX team. I wanted to personally reach out and introduce myself.
 
-I'm Amara, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity — the Akwa Ibom Hospitality Vehicle — answer your questions, and make the entire process as smooth and transparent as possible.
+I'm Amara, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity - the Akwa Ibom Hospitality Vehicle - answer your questions, and make the entire process as smooth and transparent as possible.
 
 Here's what I'll help you with:
 - Understanding if this investment fits your goals
@@ -97,7 +97,7 @@ export function getKYCApprovalEmailTemplate(params: {
   investorName: string;
   agreementLink: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'KYC Approved — Your Investment Agreement is Ready';
+  const subject = 'KYC Approved - Your Investment Agreement is Ready';
 
   const html = `
 <!DOCTYPE html>

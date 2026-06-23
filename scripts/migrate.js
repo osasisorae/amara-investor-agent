@@ -19,28 +19,25 @@ async function migrate() {
   const migrationFile = path.join(__dirname, '../migrations/001_initial_schema.sql');
   const sql = fs.readFileSync(migrationFile, 'utf-8');
 
-  // Split by semicolons and execute each statement
-  const statements = sql
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith('--'));
-
-  for (const statement of statements) {
+  try {
+    // Use batch execution
+    const results = await db.batch(
+      [{ sql, args: [] }],
+      'write'
+    );
+    console.log('✅ Migration complete! Tables created successfully.');
+  } catch (error) {
+    // If batch fails, try execute multiple
+    console.log('Trying alternative method...\n');
     try {
-      await db.execute(statement);
-      console.log('✅', statement.substring(0, 60) + '...');
-    } catch (error) {
-      // Ignore "already exists" errors
-      if (error.message && error.message.includes('already exists')) {
-        console.log('⏭️ ', statement.substring(0, 60) + '... (already exists)');
-      } else {
-        console.error('❌ Failed:', error.message);
-        console.error('Statement:', statement);
-      }
+      await db.executeMultiple(sql);
+      console.log('✅ Migration complete! Tables created successfully.');
+    } catch (err) {
+      console.error('❌ Migration failed:', err.message);
+      process.exit(1);
     }
   }
 
-  console.log('\n✨ Migration complete!');
   process.exit(0);
 }
 
