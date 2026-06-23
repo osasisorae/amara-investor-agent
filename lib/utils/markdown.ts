@@ -3,7 +3,12 @@
  * Handles common markdown patterns used by Amara
  */
 export function markdownToHtml(markdown: string): string {
-  let html = markdown;
+  let html = markdown
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
   // Convert bold (**text** or __text__)
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');

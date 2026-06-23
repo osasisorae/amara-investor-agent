@@ -9,12 +9,15 @@ export type AuditEventType =
   | 'future_interest_noted'
   | 'deal_room_email_sent'
   | 'deal_room_accessed'
+  | 'human_review_requested'
   | 'kyc_submitted'
   | 'kyc_approved'
   | 'kyc_rejected'
   | 'agreement_viewed'
   | 'agreement_signed'
-  | 'payment_instructions_sent';
+  | 'otp_sent'
+  | 'payment_instructions_sent'
+  | 'payment_received';
 
 export interface AuditEvent {
   id: string;

@@ -14,7 +14,7 @@ export async function saveMessage(data: {
   leadId: string;
   role: 'agent' | 'investor';
   content: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }): Promise<Message> {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);

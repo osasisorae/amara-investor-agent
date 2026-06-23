@@ -45,3 +45,6 @@ next-env.d.ts
 *.swp
 *.swo
 *~
+
+# local exports / secrets
+Default Workspace-apiKey-397754.csv

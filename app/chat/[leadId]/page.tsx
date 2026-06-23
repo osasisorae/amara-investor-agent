@@ -1,22 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import { useParams } from 'next/navigation';
+import type { ChatMessage } from '@/lib/chat/messages';
+import type {
+  DealCardComponentData,
+  DocumentListComponentData,
+  KycPromptComponentData,
+  PipelineStatusComponentData,
+} from '@/lib/chat/components';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
-
-interface Message {
-  id: string;
-  role: 'agent' | 'investor';
-  content: string;
-  created_at: number;
-}
 
 interface Lead {
   id: string;
   email: string;
   stage: string;
+  kyc_submitted_at?: number;
 }
 
 interface QualificationState {
@@ -29,13 +30,163 @@ interface QualificationState {
   expectsBinaryResponse: boolean;
 }
 
+function getStarterPrompts(stage: string): string[] {
+  if (stage === 'deal_room') {
+    return [
+      'What is the expected return on this investment?',
+      'How does the SPV structure protect me?',
+      'How do I repatriate returns as a diaspora investor?',
+      'What are the risks?',
+      'What happens at the end of the 5-year hold?',
+    ];
+  }
+
+  if (stage === 'agreement_pending') {
+    return [
+      "I'm ready to review and sign the agreement.",
+      'What happens after I sign?',
+    ];
+  }
+
+  if (stage === 'kyc_intake') {
+    return [
+      'What documents do you need from me?',
+      "I'm ready to upload my KYC documents.",
+    ];
+  }
+
+  if (stage === 'outreach_sent' || stage === 'qualifying') {
+    return [
+      "I'm based in London.",
+      "I'm living and working outside Nigeria.",
+      'Walk me through the process step by step.',
+    ];
+  }
+
+  return [];
+}
+
+function renderDealCard(data: DealCardComponentData) {
+  return (
+    <div className="rounded-[24px] border border-futurex-gold-border bg-futurex-gold-soft/40 p-5">
+      <div className="text-[11px] uppercase tracking-[0.22em] text-futurex-gold">
+        Deal Snapshot
+      </div>
+      <h3 className="mt-3 font-serif text-2xl text-futurex-ink">
+        {data.spvName}
+      </h3>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-futurex-muted">
+            Target return
+          </div>
+          <div className="mt-2 text-sm leading-6 text-futurex-ink">
+            {data.targetReturn}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-futurex-muted">
+            Hold period
+          </div>
+          <div className="mt-2 text-sm leading-6 text-futurex-ink">
+            {data.holdPeriod}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-futurex-muted">
+            Minimum ticket
+          </div>
+          <div className="mt-2 text-sm leading-6 text-futurex-ink">
+            {data.minimumTicket}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-futurex-muted">
+            Exit strategy
+          </div>
+          <div className="mt-2 text-sm leading-6 text-futurex-ink">
+            {data.exitStrategy}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderDocumentList(data: DocumentListComponentData) {
+  return (
+    <div className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5">
+      <h3 className="font-serif text-2xl text-futurex-ink">{data.title}</h3>
+      <p className="mt-3 text-sm leading-6 text-futurex-muted">
+        {data.description}
+      </p>
+      <div className="mt-4 space-y-3">
+        {data.documents.map((document) => (
+          <a
+            key={document.href}
+            href={document.href}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 transition hover:border-futurex-gold"
+          >
+            <div className="text-sm font-semibold text-futurex-ink">
+              {document.label}
+            </div>
+            <div className="mt-2 text-sm leading-6 text-futurex-muted">
+              {document.description}
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function renderPipelineStatus(data: PipelineStatusComponentData) {
+  const currentIndex = data.stages.findIndex(
+    (stage) => stage.stage === data.currentStage
+  );
+
+  return (
+    <div className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5">
+      <h3 className="font-serif text-2xl text-futurex-ink">{data.title}</h3>
+      <p className="mt-3 text-sm leading-6 text-futurex-muted">
+        {data.description}
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {data.stages.map((stage, index) => {
+          const isActive = index === currentIndex;
+          const isComplete = index < currentIndex;
+
+          return (
+            <div
+              key={stage.stage}
+              className={`rounded-2xl border px-3 py-3 text-center text-xs ${
+                isActive
+                  ? 'border-futurex-gold bg-futurex-gold-soft text-futurex-gold'
+                  : isComplete
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                    : 'border-futurex-line bg-futurex-surface text-futurex-muted'
+              }`}
+            >
+              <div className="font-semibold">{index + 1}</div>
+              <div className="mt-1 leading-4">{stage.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const params = useParams();
   const leadId = params.leadId as string;
   const { notify } = useFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [lead, setLead] = useState<Lead | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -47,40 +198,57 @@ export default function ChatPage() {
       currentQuestion: null,
       expectsBinaryResponse: false,
     });
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadChat();
   }, [leadId]);
 
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const starterPrompts = useMemo(
+    () => getStarterPrompts(lead?.stage || 'outreach_sent'),
+    [lead?.stage]
+  );
+
+  const disableInput =
+    sending ||
+    lead?.stage === 'pending_human_review' ||
+    lead?.stage === 'kyc_rejected';
 
   const loadChat = async () => {
     try {
       const response = await fetch(`/api/chat/${leadId}`);
       const data = await response.json();
 
-      if (response.ok) {
-        setMessages(data.messages || []);
-        setLead(data.lead);
-        setQualificationState(
-          data.qualificationState || {
-            currentQuestion: null,
-            expectsBinaryResponse: false,
-          }
-        );
+      if (!response.ok) {
+        notify({
+          title: 'Chat unavailable',
+          message: data.error || 'Failed to load chat.',
+          tone: 'error',
+        });
+        return;
       }
+
+      setMessages(data.messages || []);
+      setLead(data.lead);
+      setQualificationState(
+        data.qualificationState || {
+          currentQuestion: null,
+          expectsBinaryResponse: false,
+        }
+      );
     } catch (error) {
       console.error('Failed to load chat:', error);
+      notify({
+        title: 'Chat unavailable',
+        message: 'Failed to load chat.',
+        tone: 'error',
+      });
     } finally {
       setLoading(false);
     }
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const applyStarterPrompt = (prompt: string) => {
@@ -89,19 +257,23 @@ export default function ChatPage() {
   };
 
   const submitMessage = async (rawMessage: string) => {
-    if (!rawMessage.trim() || sending) return;
+    if (!rawMessage.trim() || sending) {
+      return;
+    }
 
     const userMessage = rawMessage.trim();
     setInput('');
     setSending(true);
 
-    const tempUserMsg: Message = {
+    const tempUserMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: 'investor',
-      content: userMessage,
-      created_at: Math.floor(Date.now() / 1000),
+      text: userMessage,
+      type: 'text',
+      createdAt: Math.floor(Date.now() / 1000),
     };
-    setMessages((prev) => [...prev, tempUserMsg]);
+
+    setMessages((current) => [...current, tempUserMessage]);
 
     try {
       const response = await fetch(`/api/chat/${leadId}`, {
@@ -109,36 +281,37 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage }),
       });
-
       const data = await response.json();
 
-      if (response.ok) {
-        const agentMsg: Message = {
-          id: `agent-${Date.now()}`,
-          role: 'agent',
-          content: data.message,
-          created_at: Math.floor(Date.now() / 1000),
-        };
-        setMessages((prev) => [...prev, agentMsg]);
-
-        if (data.stage && lead) {
-          setLead({ ...lead, stage: data.stage });
-        }
-        setQualificationState(
-          data.qualificationState || {
-            currentQuestion: null,
-            expectsBinaryResponse: false,
-          }
+      if (!response.ok) {
+        setMessages((current) =>
+          current.filter((message) => message.id !== tempUserMessage.id)
         );
-      } else {
         notify({
           title: 'Message not sent',
           message: data.error || 'Failed to send message.',
           tone: 'error',
         });
+        return;
       }
+
+      setMessages((current) => [...current, ...(data.messages || [])]);
+
+      if (data.stage && lead) {
+        setLead({ ...lead, stage: data.stage });
+      }
+
+      setQualificationState(
+        data.qualificationState || {
+          currentQuestion: null,
+          expectsBinaryResponse: false,
+        }
+      );
     } catch (error) {
       console.error('Failed to send message:', error);
+      setMessages((current) =>
+        current.filter((message) => message.id !== tempUserMessage.id)
+      );
       notify({
         title: 'Message not sent',
         message: 'Failed to send message.',
@@ -149,8 +322,8 @@ export default function ChatPage() {
     }
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
     await submitMessage(input);
   };
 
@@ -166,20 +339,21 @@ export default function ChatPage() {
         body: formData,
       });
 
-      if (response.ok) {
-        setUploadedDocs((prev) => [...prev, docType]);
-        notify({
-          title: 'Upload complete',
-          message: `${docType} uploaded successfully.`,
-          tone: 'success',
-        });
-      } else {
+      if (!response.ok) {
         notify({
           title: 'Upload failed',
           message: 'Failed to upload document.',
           tone: 'error',
         });
+        return;
       }
+
+      setUploadedDocs((current) => [...current, docType]);
+      notify({
+        title: 'Upload complete',
+        message: `${docType} uploaded successfully.`,
+        tone: 'success',
+      });
     } catch (error) {
       console.error('Upload failed:', error);
       notify({
@@ -206,23 +380,34 @@ export default function ChatPage() {
       const response = await fetch(`/api/kyc/${leadId}/upload`, {
         method: 'PATCH',
       });
+      const data = await response.json();
 
-      if (response.ok) {
-        notify({
-          title: 'KYC submitted',
-          message:
-            'KYC submitted for review. Our compliance team will review within 24-48 hours.',
-          tone: 'success',
-        });
-        if (lead) {
-          setLead({ ...lead, stage: 'pending_human_review' });
-        }
-      } else {
+      if (!response.ok) {
         notify({
           title: 'KYC not submitted',
-          message: 'Failed to submit KYC for review.',
+          message: data.error || 'Failed to submit KYC for review.',
           tone: 'error',
         });
+        return;
+      }
+
+      notify({
+        title: 'KYC submitted',
+        message:
+          'KYC submitted for review. Our compliance team will review within 24-48 hours.',
+        tone: 'success',
+      });
+
+      if (lead) {
+        setLead({
+          ...lead,
+          stage: 'pending_human_review',
+          kyc_submitted_at: Math.floor(Date.now() / 1000),
+        });
+      }
+
+      if (data.messages?.length) {
+        setMessages((current) => [...current, ...data.messages]);
       }
     } catch (error) {
       console.error('Failed to complete KYC:', error);
@@ -234,33 +419,124 @@ export default function ChatPage() {
     }
   };
 
-  const getStageDisplay = (stage: string) => {
-    const stageMap: Record<string, string> = {
-      outreach_sent: 'Welcome',
-      qualifying: 'Qualification',
-      deal_room: 'Deal Room',
-      kyc_intake: 'KYC Submission',
-      pending_human_review: 'KYC Under Review',
-      agreement_pending: 'Agreement Ready',
-      agreement_signed: 'Agreement Signed',
-      disqualified: 'Not Qualified',
-    };
-    return stageMap[stage] || stage;
-  };
-
-  const starterPrompts: string[] = [];
-
   const getInputPlaceholder = () => {
+    if (lead?.stage === 'outreach_sent' || lead?.stage === 'qualifying') {
+      return "Tell Amara where you're based...";
+    }
+
     if (lead?.stage === 'pending_human_review') {
-      return 'Waiting for KYC review...';
+      return lead.kyc_submitted_at
+        ? 'Waiting for compliance review...'
+        : 'A FutureX team member will follow up directly.';
+    }
+
+    if (lead?.stage === 'agreement_pending') {
+      return 'Ask about the agreement or next steps...';
+    }
+
+    if (lead?.stage === 'payment_pending') {
+      return 'Ask about payment instructions or onboarding...';
     }
 
     return 'Type your message...';
   };
 
+  const renderKycPrompt = (data: KycPromptComponentData) => {
+    const isSubmitted =
+      lead?.stage === 'pending_human_review' && Boolean(lead.kyc_submitted_at);
+    const isActive = lead?.stage === 'kyc_intake';
+
+    return (
+      <div className="rounded-[24px] border border-futurex-gold-border bg-futurex-gold-soft/40 p-5">
+        <h3 className="font-serif text-2xl text-futurex-ink">{data.title}</h3>
+        <p className="mt-3 text-sm leading-6 text-futurex-muted">
+          {data.description}
+        </p>
+
+        {isSubmitted ? (
+          <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            Your documents have been submitted and are now with compliance for
+            review.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {data.requirements.map((requirement) => {
+              const alreadyUploaded = uploadedDocs.includes(requirement.key);
+
+              return (
+                <label key={requirement.key} className="block">
+                  <span className="text-sm text-futurex-muted">
+                    {requirement.label}{' '}
+                    {requirement.optional ? '(optional)' : ''}
+                    {alreadyUploaded && ' ✓'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(event) =>
+                      event.target.files?.[0] &&
+                      uploadDocument(event.target.files[0], requirement.key)
+                    }
+                    disabled={uploading || alreadyUploaded || !isActive}
+                    className="mt-1 block w-full text-sm text-futurex-muted file:mr-4 file:cursor-pointer file:rounded-full file:border-0 file:bg-futurex-gold file:px-4 file:py-2 file:text-sm file:font-semibold file:text-futurex-bg disabled:opacity-50"
+                  />
+                </label>
+              );
+            })}
+            <button
+              type="button"
+              onClick={completeKYC}
+              disabled={!isActive || uploadedDocs.length < 2}
+              className="mt-2 w-full rounded-full bg-futurex-gold px-4 py-3 text-sm font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
+            >
+              Submit KYC for review
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAgentContent = (message: ChatMessage) => {
+    if (!message.metadata) {
+      return (
+        <div
+          className="markdown-content whitespace-pre-wrap"
+          dangerouslySetInnerHTML={{
+            __html: markdownToHtml(message.text),
+          }}
+        />
+      );
+    }
+
+    switch (message.type) {
+      case 'deal_card':
+        return renderDealCard(message.metadata.data as DealCardComponentData);
+      case 'document_list':
+        return renderDocumentList(
+          message.metadata.data as DocumentListComponentData
+        );
+      case 'pipeline_status':
+        return renderPipelineStatus(
+          message.metadata.data as PipelineStatusComponentData
+        );
+      case 'kyc_prompt':
+        return renderKycPrompt(message.metadata.data as KycPromptComponentData);
+      default:
+        return (
+          <div
+            className="markdown-content whitespace-pre-wrap"
+            dangerouslySetInnerHTML={{
+              __html: markdownToHtml(message.text),
+            }}
+          />
+        );
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-futurex-bg flex items-center justify-center">
+      <div className="flex h-screen items-center justify-center bg-futurex-bg">
         <p className="text-futurex-muted">Loading...</p>
       </div>
     );
@@ -268,68 +544,39 @@ export default function ChatPage() {
 
   if (!lead) {
     return (
-      <div className="min-h-screen bg-futurex-bg flex items-center justify-center">
+      <div className="flex h-screen items-center justify-center bg-futurex-bg">
         <p className="text-futurex-muted">Chat not found</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-futurex-bg flex flex-col">
+    <div className="flex h-screen flex-col bg-futurex-bg">
       <header className="border-b border-futurex-line bg-futurex-surface">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Image
-              src="/amara-wordmark-cropped.jpeg"
-              alt="Amara"
-              width={154}
-              height={48}
-              className="h-auto w-[132px] sm:w-[154px]"
-            />
-            <div className="hidden text-[11px] tracking-[0.2em] uppercase text-futurex-muted sm:block">
-              Investor guide by FutureX
-            </div>
-          </div>
-          <div className="text-xs px-3 py-1 bg-futurex-gold-soft text-futurex-gold rounded-full border border-futurex-gold-border">
-            {getStageDisplay(lead.stage)}
-          </div>
+        <div className="mx-auto w-full max-w-4xl px-6 py-4">
+          <Image
+            src="/amara-wordmark-cropped.jpeg"
+            alt="Amara"
+            width={154}
+            height={48}
+            className="h-auto w-[132px] sm:w-[154px]"
+          />
         </div>
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-          {messages.length === 0 ? (
-            <div className="mx-auto max-w-2xl rounded-[28px] border border-futurex-line bg-futurex-surface p-12 text-center shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
-              <div className="mb-6 flex items-center justify-center">
-                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
-                  <Image
-                    src="/amara-icon-cropped.jpeg"
-                    alt="Amara"
-                    width={64}
-                    height={64}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              </div>
-              <h2 className="mb-4 font-serif text-3xl text-futurex-ink">
-                Hi, I&apos;m Amara
-              </h2>
-              <p className="mx-auto max-w-md text-lg text-futurex-muted leading-relaxed">
-                I&apos;m here to help you understand if the Akwa Ibom Hospitality Vehicle is a good fit for you.
-              </p>
-              <p className="mx-auto mt-3 max-w-md text-futurex-muted">
-                This takes about 2 minutes. Just tell me where you&apos;re based to get started.
-              </p>
-            </div>
-          ) : (
-            messages.map((msg) => (
+        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 py-8">
+          <div className="space-y-4">
+            {messages.map((message) => (
               <div
-                key={msg.id}
+                key={message.id}
                 className={`flex ${
-                  msg.role === 'investor' ? 'justify-end' : 'justify-start'
+                  message.role === 'investor'
+                    ? 'justify-end'
+                    : 'justify-start'
                 }`}
               >
-                {msg.role === 'agent' ? (
+                {message.role === 'agent' ? (
                   <div className="flex max-w-3xl items-start gap-3">
                     <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
                       <Image
@@ -344,116 +591,80 @@ export default function ChatPage() {
                       <div className="mb-1 text-xs font-semibold text-futurex-gold">
                         Amara
                       </div>
-                      <div
-                        className="whitespace-pre-wrap markdown-content"
-                        dangerouslySetInnerHTML={{
-                          __html: markdownToHtml(msg.content),
-                        }}
-                      />
+                      {renderAgentContent(message)}
                       <div className="mt-2 text-xs text-futurex-muted">
-                        {new Date(msg.created_at * 1000).toLocaleTimeString()}
+                        {new Date(message.createdAt * 1000).toLocaleTimeString()}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="max-w-2xl rounded-2xl bg-futurex-gold px-5 py-3 text-futurex-bg">
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    <div className="whitespace-pre-wrap">{message.text}</div>
                     <div className="mt-2 text-xs text-futurex-bg/70">
-                      {new Date(msg.created_at * 1000).toLocaleTimeString()}
+                      {new Date(message.createdAt * 1000).toLocaleTimeString()}
                     </div>
                   </div>
                 )}
               </div>
-            ))
-          )}
+            ))}
+          </div>
           <div ref={messagesEndRef} />
         </div>
       </main>
 
       <footer className="border-t border-futurex-line bg-futurex-surface">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          {lead?.stage === 'kyc_intake' && (
-            <div className="mb-4 p-4 bg-futurex-surface2 border border-futurex-gold-border rounded-lg">
-              <h3 className="text-futurex-gold font-semibold mb-3">Upload KYC Documents</h3>
-              <div className="space-y-2">
-                <label className="block">
-                  <span className="text-sm text-futurex-muted">Government ID {uploadedDocs.includes('id') && '✓'}</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'id')}
-                    disabled={uploading || uploadedDocs.includes('id')}
-                    className="block w-full text-sm text-futurex-muted mt-1
-                      file:mr-4 file:py-2 file:px-4
-                      file:rounded file:border-0
-                      file:text-sm file:font-semibold
-                      file:bg-futurex-gold file:text-futurex-bg
-                      hover:file:opacity-90 file:cursor-pointer
-                      disabled:opacity-50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-futurex-muted">Proof of Residence {uploadedDocs.includes('residence') && '✓'}</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'residence')}
-                    disabled={uploading || uploadedDocs.includes('residence')}
-                    className="block w-full text-sm text-futurex-muted mt-1
-                      file:mr-4 file:py-2 file:px-4
-                      file:rounded file:border-0
-                      file:text-sm file:font-semibold
-                      file:bg-futurex-gold file:text-futurex-bg
-                      hover:file:opacity-90 file:cursor-pointer
-                      disabled:opacity-50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-futurex-muted">Proof of Funds (Optional) {uploadedDocs.includes('funds') && '✓'}</span>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => e.target.files?.[0] && uploadDocument(e.target.files[0], 'funds')}
-                    disabled={uploading || uploadedDocs.includes('funds')}
-                    className="block w-full text-sm text-futurex-muted mt-1
-                      file:mr-4 file:py-2 file:px-4
-                      file:rounded file:border-0
-                      file:text-sm file:font-semibold
-                      file:bg-futurex-gold file:text-futurex-bg
-                      hover:file:opacity-90 file:cursor-pointer
-                      disabled:opacity-50"
-                  />
-                </label>
-                {uploadedDocs.length >= 2 && (
-                  <button
-                    onClick={completeKYC}
-                    className="w-full bg-green-600 text-white py-2 rounded font-semibold hover:bg-green-700 mt-2"
-                  >
-                    Submit KYC for Review
-                  </button>
-                )}
-              </div>
+        <div className="mx-auto w-full max-w-4xl px-6 py-4">
+          {starterPrompts.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {starterPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => applyStarterPrompt(prompt)}
+                  className="rounded-full border border-futurex-line px-3 py-2 text-sm text-futurex-muted transition hover:border-futurex-gold hover:text-futurex-gold"
+                >
+                  {prompt}
+                </button>
+              ))}
             </div>
           )}
+
+          {qualificationState.expectsBinaryResponse &&
+            (lead.stage === 'outreach_sent' || lead.stage === 'qualifying') && (
+              <div className="mb-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => submitMessage('Yes')}
+                  disabled={sending}
+                  className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitMessage('No')}
+                  disabled={sending}
+                  className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
+                >
+                  No
+                </button>
+              </div>
+            )}
 
           <form onSubmit={sendMessage} className="flex gap-3">
             <input
               ref={inputRef}
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={sending || lead?.stage === 'pending_human_review'}
+              onChange={(event) => setInput(event.target.value)}
+              disabled={disableInput}
               placeholder={getInputPlaceholder()}
-              className="flex-1 bg-futurex-surface2 border border-futurex-line rounded px-4 py-3 text-futurex-ink placeholder-futurex-muted focus:border-futurex-gold outline-none disabled:opacity-50"
+              className="flex-1 rounded-xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-futurex-ink outline-none transition placeholder:text-futurex-muted focus:border-futurex-gold disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={
-                sending ||
-                !input.trim() ||
-                lead?.stage === 'pending_human_review'
-              }
-              className="bg-futurex-gold text-futurex-bg px-6 py-3 rounded font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={disableInput || !input.trim()}
+              className="rounded-xl bg-futurex-gold px-6 py-3 font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
             >
               {sending ? 'Sending...' : 'Send'}
             </button>

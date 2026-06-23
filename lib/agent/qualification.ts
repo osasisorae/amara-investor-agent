@@ -13,6 +13,15 @@ export interface QualificationAssessment {
   location?: string;
 }
 
+export interface ParsedMoneyValue {
+  amount: number;
+  currency: 'NGN' | 'USD';
+}
+
+export const MINIMUM_TICKET_NGN = 5_000_000;
+export const MINIMUM_TICKET_USD = 3_300;
+export const MINIMUM_HOLD_YEARS = 5;
+
 export const QUALIFICATION_SEQUENCE: QualificationQuestion[] = [
   'investor_profile',
   'ticket_size',
@@ -144,7 +153,7 @@ function parseDurationInYears(value: string): number | null {
   return null;
 }
 
-function parseMoneyValue(value: string): { amount: number; currency: 'NGN' | 'USD' } | null {
+export function parseMoneyValue(value: string): ParsedMoneyValue | null {
   const normalized = normalizeText(value);
 
   const nairaMatch = normalized.match(
@@ -192,9 +201,9 @@ export function getDisqualificationReason(question: QualificationQuestion): stri
     case 'investor_profile':
       return 'Does not meet the diaspora or verified local HNI requirement.';
     case 'investment_horizon':
-      return 'Not comfortable with the minimum 5-year investment horizon.';
+      return `Not comfortable with the minimum ${MINIMUM_HOLD_YEARS}-year investment horizon.`;
     case 'ticket_size':
-      return 'Below the minimum ticket size of NGN 5M (or USD equivalent).';
+      return `Below the minimum ticket size of NGN ${MINIMUM_TICKET_NGN / 1_000_000}M (or USD equivalent).`;
     case 'kyc_willingness':
       return 'Not willing to complete KYC compliance.';
   }
@@ -275,20 +284,20 @@ export function assessQualificationResponse(
           matched: true,
           passed: false,
           reason: getDisqualificationReason(question),
-          summary: 'Investor is not comfortable with the minimum 5-year horizon.',
+          summary: `Investor is not comfortable with the minimum ${MINIMUM_HOLD_YEARS}-year horizon.`,
         };
       }
 
       if (
         binaryIntent === 'yes' ||
         normalized.includes('long term') ||
-        (years !== null && years >= 5)
+        (years !== null && years >= MINIMUM_HOLD_YEARS)
       ) {
         return {
           question,
           matched: true,
           passed: true,
-          summary: 'Investor is comfortable with a 5-year or longer horizon.',
+          summary: `Investor is comfortable with a ${MINIMUM_HOLD_YEARS}-year or longer horizon.`,
         };
       }
 
@@ -310,8 +319,8 @@ export function assessQualificationResponse(
 
       if (money) {
         const passes =
-          (money.currency === 'NGN' && money.amount >= 5_000_000) ||
-          (money.currency === 'USD' && money.amount >= 3_300);
+          (money.currency === 'NGN' && money.amount >= MINIMUM_TICKET_NGN) ||
+          (money.currency === 'USD' && money.amount >= MINIMUM_TICKET_USD);
 
         return {
           question,
@@ -419,7 +428,7 @@ export function summarizeQualificationAnswer(
   }
 
   if (question === 'investment_horizon' && passed === 0) {
-    return 'Investor is not comfortable with the minimum 5-year horizon.';
+    return `Investor is not comfortable with the minimum ${MINIMUM_HOLD_YEARS}-year horizon.`;
   }
 
   if (question === 'ticket_size' && passed === 0) {

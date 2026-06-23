@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { toChatMessages } from '@/lib/chat/messages';
 import { getLeadById, updateLeadStage, type Lead, type LeadStage } from '@/lib/db/leads';
 import { getMessagesByLeadId } from '@/lib/db/messages';
 import {
@@ -40,11 +41,17 @@ function inferLeadStageFromMessages(
   }
 
   const lower = latestAgentMessage.content.toLowerCase();
+  const allAgentContent = messages
+    .filter((message) => message.role === 'agent')
+    .map((message) => message.content.toLowerCase())
+    .join('\n');
 
   if (
     lower.includes("you're in") ||
     lower.includes('qualified for the deal room') ||
-    lower.includes('deal room access is now active')
+    lower.includes('deal room access is now active') ||
+    allAgentContent.includes('[ui:deal_card]') ||
+    allAgentContent.includes('[ui:kyc_prompt]')
   ) {
     return 'deal_room';
   }
@@ -123,7 +130,7 @@ export async function GET(
 
     return NextResponse.json({
       lead,
-      messages,
+      messages: toChatMessages(messages),
       qualificationState,
     });
   } catch (error) {
@@ -159,7 +166,13 @@ export async function POST(
     lead = await reconcileLeadStage(lead, existingMessages);
 
     // Process message through agent orchestrator
-    const response = await orchestrator.processMessage(lead, message);
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+      new URL(request.url).origin;
+
+    const response = await orchestrator.processMessage(lead, message, {
+      appUrl,
+    });
 
     // Update stage if needed
     if (response.shouldUpdateStage) {
@@ -170,9 +183,6 @@ export async function POST(
     const qualificationState = await getQualificationState(leadId, nextStage);
 
     if (response.shouldUpdateStage === 'deal_room' && lead.stage !== 'deal_room') {
-      const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
-        new URL(request.url).origin;
       const chatLink = `${appUrl}/chat/${lead.id}`;
       const emailTemplate = getDealRoomAccessEmailTemplate({
         investorName: lead.full_name || 'there',
@@ -200,9 +210,8 @@ export async function POST(
     }
 
     return NextResponse.json({
-      message: response.message,
+      messages: toChatMessages(response.agentMessages),
       stage: nextStage,
-      metadata: response.metadata,
       qualificationState,
     });
   } catch (error) {

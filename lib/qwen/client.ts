@@ -15,17 +15,65 @@ export interface QwenMessage {
   content: string;
 }
 
-export interface QwenResponse {
+export interface QwenToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface QwenToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export type QwenConversationMessage =
+  | {
+      role: 'system' | 'user';
+      content: string;
+    }
+  | {
+      role: 'assistant';
+      content: string | null;
+      tool_calls?: QwenToolCall[];
+    }
+  | {
+      role: 'tool';
+      content: string;
+      tool_call_id: string;
+      name: string;
+    };
+
+export type QwenToolChoice =
+  | 'auto'
+  | 'required'
+  | {
+      type: 'function';
+      function: {
+        name: string;
+      };
+    };
+
+export interface QwenAssistantMessage {
+  role: 'assistant';
+  content: string | null;
+  tool_calls?: QwenToolCall[];
+}
+
+interface QwenResponse {
   id: string;
   object: string;
   created: number;
   model: string;
   choices: Array<{
     index: number;
-    message: {
-      role: string;
-      content: string;
-    };
+    message: QwenAssistantMessage;
     finish_reason: string;
   }>;
   usage: {
@@ -35,6 +83,54 @@ export interface QwenResponse {
   };
 }
 
+async function requestQwenCompletion(body: Record<string, unknown>) {
+  const response = await fetch(`${QWEN_API_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${QWEN_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: QWEN_MODEL,
+      ...body,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Qwen API error: ${response.status} - ${errorText}`);
+  }
+
+  const data: QwenResponse = await response.json();
+
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('No response from Qwen API');
+  }
+
+  return data.choices[0].message;
+}
+
+export async function createQwenChatCompletion(params: {
+  messages: QwenConversationMessage[];
+  tools?: QwenToolDefinition[];
+  toolChoice?: QwenToolChoice;
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<QwenAssistantMessage> {
+  try {
+    return await requestQwenCompletion({
+      messages: params.messages,
+      tools: params.tools,
+      tool_choice: params.toolChoice,
+      temperature: params.temperature ?? 0.4,
+      max_tokens: params.maxTokens ?? 1500,
+    });
+  } catch (error) {
+    console.error('Qwen API call failed:', error);
+    throw error;
+  }
+}
+
 export async function callQwen(
   messages: QwenMessage[],
   options?: {
@@ -42,37 +138,17 @@ export async function callQwen(
     max_tokens?: number;
   }
 ): Promise<string> {
-  try {
-    const response = await fetch(`${QWEN_API_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${QWEN_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: QWEN_MODEL,
-        messages,
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.max_tokens ?? 1500,
-      }),
-    });
+  const assistantMessage = await createQwenChatCompletion({
+    messages,
+    temperature: options?.temperature ?? 0.7,
+    maxTokens: options?.max_tokens ?? 1500,
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Qwen API error: ${response.status} - ${errorText}`);
-    }
-
-    const data: QwenResponse = await response.json();
-    
-    if (!data.choices || data.choices.length === 0) {
-      throw new Error('No response from Qwen API');
-    }
-
-    return data.choices[0].message.content;
-  } catch (error) {
-    console.error('Qwen API call failed:', error);
-    throw error;
+  if (!assistantMessage.content) {
+    throw new Error('Qwen returned an empty assistant message');
   }
+
+  return assistantMessage.content;
 }
 
 export async function callQwenWithSystemPrompt(

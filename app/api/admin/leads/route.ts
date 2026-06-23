@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllLeads } from '@/lib/db/leads';
-import { query, execute, queryOne } from '@/lib/db/client';
+import { deleteLeadCascade, getAllLeads } from '@/lib/db/leads';
+import { query } from '@/lib/db/client';
 import {
   buildFutureInterestNote,
   detectFutureInterestRequest,
@@ -165,11 +165,17 @@ function inferStageFromMessages(
   }
 
   const lower = latestAgentMessage.content.toLowerCase();
+  const allAgentContent = messages
+    .filter((message) => message.role === 'agent')
+    .map((message) => message.content.toLowerCase())
+    .join('\n');
 
   if (
     lower.includes("you're in") ||
     lower.includes('qualified for the deal room') ||
-    lower.includes('deal room access is now active')
+    lower.includes('deal room access is now active') ||
+    allAgentContent.includes('[ui:deal_card]') ||
+    allAgentContent.includes('[ui:kyc_prompt]')
   ) {
     return 'deal_room';
   }
@@ -197,7 +203,13 @@ export async function GET() {
     const auditEvents = await query<AuditEventRow>(
       `SELECT lead_id, event_type, metadata, created_at
        FROM audit_events
-       WHERE event_type IN ('qualification_failed', 'future_interest_noted')
+       WHERE event_type IN (
+         'qualification_failed',
+         'future_interest_noted',
+         'human_review_requested',
+         'payment_instructions_sent',
+         'payment_received'
+       )
        ORDER BY created_at DESC`
     );
     const messages = await query<MessageRow>(
@@ -231,6 +243,9 @@ export async function GET() {
 
     const latestFailedEventByLead = new Map<string, AuditEventRow>();
     const latestFutureInterestByLead = new Map<string, AuditEventRow>();
+    const latestHumanReviewByLead = new Map<string, AuditEventRow>();
+    const latestPaymentInstructionsByLead = new Map<string, AuditEventRow>();
+    const latestPaymentReceivedByLead = new Map<string, AuditEventRow>();
     const messagesByLead = new Map<string, MessageRow[]>();
 
     for (const event of auditEvents) {
@@ -247,6 +262,27 @@ export async function GET() {
       ) {
         latestFutureInterestByLead.set(event.lead_id, event);
       }
+
+      if (
+        event.event_type === 'human_review_requested' &&
+        !latestHumanReviewByLead.has(event.lead_id)
+      ) {
+        latestHumanReviewByLead.set(event.lead_id, event);
+      }
+
+      if (
+        event.event_type === 'payment_instructions_sent' &&
+        !latestPaymentInstructionsByLead.has(event.lead_id)
+      ) {
+        latestPaymentInstructionsByLead.set(event.lead_id, event);
+      }
+
+      if (
+        event.event_type === 'payment_received' &&
+        !latestPaymentReceivedByLead.has(event.lead_id)
+      ) {
+        latestPaymentReceivedByLead.set(event.lead_id, event);
+      }
     }
 
     for (const message of messages) {
@@ -261,8 +297,16 @@ export async function GET() {
       const latestAnswers = answersByLead.get(lead.id) || {};
       const failedEvent = latestFailedEventByLead.get(lead.id);
       const futureInterestEvent = latestFutureInterestByLead.get(lead.id);
+      const humanReviewEvent = latestHumanReviewByLead.get(lead.id);
+      const paymentInstructionsEvent = latestPaymentInstructionsByLead.get(lead.id);
+      const paymentReceivedEvent = latestPaymentReceivedByLead.get(lead.id);
       const failedMetadata = parseMetadata(failedEvent?.metadata);
       const futureInterestMetadata = parseMetadata(futureInterestEvent?.metadata);
+      const humanReviewMetadata = parseMetadata(humanReviewEvent?.metadata);
+      const paymentInstructionsMetadata = parseMetadata(
+        paymentInstructionsEvent?.metadata
+      );
+      const paymentReceivedMetadata = parseMetadata(paymentReceivedEvent?.metadata);
       const leadMessages = messagesByLead.get(lead.id) || [];
       const historicalSummary = inferHistoricalSummary(leadMessages);
       const inferredStage = inferStageFromMessages(leadMessages);
@@ -331,6 +375,22 @@ export async function GET() {
           disqualificationReason: resolvedDisqualificationReason,
           futureInterestNote: resolvedFutureInterestNote,
         },
+        opsSummary: {
+          humanReviewReason:
+            humanReviewMetadata?.reason && typeof humanReviewMetadata.reason === 'string'
+              ? humanReviewMetadata.reason
+              : null,
+          paymentReference:
+            paymentInstructionsMetadata?.payment_reference &&
+            typeof paymentInstructionsMetadata.payment_reference === 'string'
+              ? paymentInstructionsMetadata.payment_reference
+              : null,
+          paymentConfirmedBy:
+            paymentReceivedMetadata?.confirmed_by &&
+            typeof paymentReceivedMetadata.confirmed_by === 'string'
+              ? paymentReceivedMetadata.confirmed_by
+              : null,
+        },
       };
     });
 
@@ -360,30 +420,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get lead email first
-    const lead = await queryOne<{ email: string }>(
-      'SELECT email FROM leads WHERE id = ?',
-      [leadId]
-    );
-
+    const lead = await deleteLeadCascade(leadId);
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    // Delete from all related tables
-    await execute('DELETE FROM messages WHERE lead_id = ?', [leadId]);
-    await execute('DELETE FROM qualification_answers WHERE lead_id = ?', [leadId]);
-    await execute('DELETE FROM kyc_documents WHERE lead_id = ?', [leadId]);
-    await execute('DELETE FROM audit_events WHERE lead_id = ?', [leadId]);
-    await execute('DELETE FROM otp_codes WHERE lead_id = ?', [leadId]);
-    await execute('DELETE FROM leads WHERE id = ?', [leadId]);
-    
-    // Also delete from offeree register to allow re-adding
-    await execute('DELETE FROM offeree_register WHERE email = ?', [lead.email]);
-
     return NextResponse.json({
       success: true,
-      message: 'Lead and all associated data deleted',
+      message: 'Lead and all associated data deleted. Offeree reset for re-add.',
       email: lead.email,
     });
   } catch (error) {

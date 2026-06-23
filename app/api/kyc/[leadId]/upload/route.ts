@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { nanoid } from 'nanoid';
+import {
+  buildPipelineStatusData,
+  createComponentMetadata,
+  getComponentFallbackText,
+} from '@/lib/chat/components';
+import { toChatMessages } from '@/lib/chat/messages';
 import { getLeadById, markKYCSubmitted } from '@/lib/db/leads';
-import { execute } from '@/lib/db/client';
+import { execute, queryOne } from '@/lib/db/client';
 import { logAuditEvent } from '@/lib/db/audit';
+import { saveMessage } from '@/lib/db/messages';
 
 export async function POST(
   request: NextRequest,
@@ -97,6 +104,25 @@ export async function PATCH(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
+    if (lead.stage !== 'kyc_intake') {
+      return NextResponse.json(
+        { error: 'Lead is not in KYC intake stage' },
+        { status: 400 }
+      );
+    }
+
+    const uploadedCount = await queryOne<{ total: number }>(
+      'SELECT COUNT(*) as total FROM kyc_documents WHERE lead_id = ?',
+      [leadId]
+    );
+
+    if (!uploadedCount || Number(uploadedCount.total) < 2) {
+      return NextResponse.json(
+        { error: 'At least two KYC documents are required before submission' },
+        { status: 400 }
+      );
+    }
+
     // Mark as submitted and move to pending review
     await markKYCSubmitted(leadId);
 
@@ -107,9 +133,28 @@ export async function PATCH(
       metadata: { status: 'pending_human_review' },
     });
 
+    const agentMessages = [
+      await saveMessage({
+        leadId,
+        role: 'agent',
+        content:
+          'Thanks. Your documents are now with our compliance team for review. I’ll keep you posted as soon as there is an update.',
+      }),
+      await saveMessage({
+        leadId,
+        role: 'agent',
+        content: getComponentFallbackText('pipeline_status'),
+        metadata: createComponentMetadata(
+          'pipeline_status',
+          buildPipelineStatusData('pending_human_review')
+        ) as unknown as Record<string, unknown>,
+      }),
+    ];
+
     return NextResponse.json({
       success: true,
       message: 'KYC submitted for review',
+      messages: toChatMessages(agentMessages),
     });
   } catch (error) {
     console.error('Error completing KYC submission:', error);

@@ -1,0 +1,314 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { markdownToHtml } from '@/lib/utils/markdown';
+import { useFeedback } from '@/components/feedback-provider';
+
+interface AgreementLead {
+  id: string;
+  email: string;
+  full_name?: string;
+  stage: string;
+}
+
+interface AgreementClientProps {
+  lead: AgreementLead;
+  agreementMarkdown: string;
+  commitmentLabel: string;
+}
+
+function getStageLabel(stage: string): string {
+  switch (stage) {
+    case 'agreement_pending':
+      return 'Ready to sign';
+    case 'agreement_signed':
+      return 'Signed';
+    case 'payment_pending':
+      return 'Payment pending';
+    case 'closed':
+      return 'Closed';
+    default:
+      return stage.replace(/_/g, ' ');
+  }
+}
+
+export default function AgreementClient({
+  lead,
+  agreementMarkdown,
+  commitmentLabel,
+}: AgreementClientProps) {
+  const { notify } = useFeedback();
+  const [stage, setStage] = useState(lead.stage);
+  const [fullName, setFullName] = useState(lead.full_name || '');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const [paymentReference, setPaymentReference] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+
+  const canSign = stage === 'agreement_pending';
+
+  const sendOtp = async () => {
+    if (!canSign || otpSending) {
+      return;
+    }
+
+    if (!fullName.trim()) {
+      notify({
+        title: 'Full name required',
+        message: 'Enter your full legal name before requesting a verification code.',
+        tone: 'info',
+      });
+      return;
+    }
+
+    setOtpSending(true);
+    try {
+      const response = await fetch(`/api/agreement/${lead.id}/otp`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        notify({
+          title: 'Code not sent',
+          message: data.error || 'Failed to send verification code.',
+          tone: 'error',
+        });
+        return;
+      }
+
+      setOtpSent(true);
+      notify({
+        title: 'Verification code sent',
+        message: 'Check your inbox for the 6-digit code.',
+        tone: 'success',
+      });
+    } catch (error) {
+      console.error('Failed to send OTP:', error);
+      notify({
+        title: 'Code not sent',
+        message: 'Failed to send verification code.',
+        tone: 'error',
+      });
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const signAgreement = async () => {
+    if (!canSign || signing) {
+      return;
+    }
+
+    if (!fullName.trim() || !otpCode.trim()) {
+      notify({
+        title: 'Missing details',
+        message: 'Enter your full legal name and the verification code.',
+        tone: 'info',
+      });
+      return;
+    }
+
+    setSigning(true);
+    try {
+      const response = await fetch(`/api/agreement/${lead.id}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          otpCode,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        notify({
+          title: 'Agreement not signed',
+          message: data.error || 'Failed to complete signing.',
+          tone: 'error',
+        });
+        return;
+      }
+
+      setStage(data.stage || 'agreement_signed');
+      setPaymentReference(data.paymentReference || null);
+      setWarning(data.warning || null);
+      setOtpCode('');
+      notify({
+        title: 'Agreement signed',
+        message:
+          data.stage === 'payment_pending'
+            ? 'Signing complete. Payment instructions have been prepared.'
+            : 'Signing complete.',
+        tone: 'success',
+      });
+    } catch (error) {
+      console.error('Failed to sign agreement:', error);
+      notify({
+        title: 'Agreement not signed',
+        message: 'Failed to complete signing.',
+        tone: 'error',
+      });
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_360px]">
+      <section className="overflow-hidden rounded-[28px] border border-futurex-line bg-futurex-surface shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+        <div className="border-b border-futurex-line px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-futurex-gold">
+                Agreement Review
+              </p>
+              <h1 className="mt-2 font-serif text-3xl text-futurex-ink">
+                FutureX Subscription Agreement
+              </h1>
+            </div>
+            <div className="rounded-full border border-futurex-gold-border bg-futurex-gold-soft px-3 py-1 text-xs font-semibold text-futurex-gold">
+              {getStageLabel(stage)}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 border-b border-futurex-line px-6 py-5 sm:grid-cols-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
+              Investor
+            </div>
+            <div className="mt-2 text-sm text-futurex-ink">{lead.email}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
+              Commitment
+            </div>
+            <div className="mt-2 text-sm text-futurex-ink">{commitmentLabel}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
+              Secure Link
+            </div>
+            <div className="mt-2 text-sm text-futurex-ink">Investor-specific</div>
+          </div>
+        </div>
+
+        <div
+          className="markdown-content max-h-[70vh] overflow-y-auto px-6 py-6 text-sm leading-7 text-futurex-ink"
+          dangerouslySetInnerHTML={{ __html: markdownToHtml(agreementMarkdown) }}
+        />
+      </section>
+
+      <aside className="space-y-4">
+        <div className="rounded-[28px] border border-futurex-line bg-futurex-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
+          <div className="text-xs uppercase tracking-[0.22em] text-futurex-gold">
+            Signature Flow
+          </div>
+          <h2 className="mt-3 font-serif text-2xl text-futurex-ink">
+            Verify and sign
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-futurex-muted">
+            Enter your full legal name, request a one-time verification code,
+            then complete signing. The code is delivered to {lead.email}.
+          </p>
+
+          <div className="mt-5 space-y-4">
+            <label className="block">
+              <span className="mb-2 block text-sm text-futurex-muted">
+                Full legal name
+              </span>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                disabled={!canSign}
+                className="w-full rounded-xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-futurex-ink outline-none transition focus:border-futurex-gold disabled:opacity-60"
+                placeholder="Jane Doe"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={sendOtp}
+              disabled={!canSign || otpSending}
+              className="w-full rounded-full border border-futurex-gold px-4 py-3 text-sm font-semibold text-futurex-gold transition hover:bg-futurex-gold-soft disabled:opacity-50"
+            >
+              {otpSending ? 'Sending code...' : otpSent ? 'Resend code' : 'Send verification code'}
+            </button>
+
+            <label className="block">
+              <span className="mb-2 block text-sm text-futurex-muted">
+                Verification code
+              </span>
+              <input
+                type="text"
+                value={otpCode}
+                onChange={(event) => setOtpCode(event.target.value)}
+                disabled={!canSign}
+                inputMode="numeric"
+                className="w-full rounded-xl border border-futurex-line bg-futurex-surface2 px-4 py-3 text-futurex-ink outline-none transition focus:border-futurex-gold disabled:opacity-60"
+                placeholder="6-digit code"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={signAgreement}
+              disabled={!canSign || signing}
+              className="w-full rounded-full bg-futurex-gold px-4 py-3 text-sm font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
+            >
+              {signing ? 'Signing...' : 'Complete signing'}
+            </button>
+          </div>
+        </div>
+
+        {(stage !== 'agreement_pending' || paymentReference || warning) && (
+          <div className="rounded-[24px] border border-futurex-line bg-futurex-surface p-5">
+            <div className="text-xs uppercase tracking-[0.18em] text-futurex-gold">
+              Status
+            </div>
+            <p className="mt-3 text-sm leading-6 text-futurex-muted">
+              {stage === 'payment_pending'
+                ? 'Your agreement is signed and payment instructions have been issued.'
+                : stage === 'agreement_signed'
+                  ? 'Your agreement is signed. Payment instructions still need to be issued manually.'
+                  : stage === 'closed'
+                    ? 'This investment record has been closed.'
+                    : 'This agreement has already been signed.'}
+            </p>
+            {paymentReference && (
+              <div className="mt-4 rounded-2xl border border-futurex-gold-border bg-futurex-gold-soft px-4 py-3 text-sm text-futurex-gold">
+                Payment reference: <span className="font-semibold">{paymentReference}</span>
+              </div>
+            )}
+            {warning && (
+              <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                {warning}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="rounded-[24px] border border-futurex-line bg-futurex-surface p-5">
+          <div className="text-xs uppercase tracking-[0.18em] text-futurex-gold">
+            Need context?
+          </div>
+          <p className="mt-3 text-sm leading-6 text-futurex-muted">
+            You can return to your conversation with Amara at any time for more
+            deal context or operational questions.
+          </p>
+          <Link
+            href={`/chat/${lead.id}`}
+            className="mt-4 inline-flex rounded-full border border-futurex-line px-4 py-2 text-sm font-medium text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+          >
+            Back to chat
+          </Link>
+        </div>
+      </aside>
+    </div>
+  );
+}

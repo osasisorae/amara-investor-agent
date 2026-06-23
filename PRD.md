@@ -64,7 +64,7 @@ These constraints are baked into the architecture, not bolted on:
 
 Agent disqualifies and closes if any of these fail:
 - Not Nigerian diaspora or verified local HNI
-- Investment horizon under 3 years
+- Investment horizon under 5 years
 - Ticket size below minimum (₦5m or USD equivalent)
 - Unwilling to proceed through KYC
 

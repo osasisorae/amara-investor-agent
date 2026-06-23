@@ -21,6 +21,11 @@ interface Lead {
     disqualificationReason?: string | null;
     futureInterestNote?: string | null;
   };
+  opsSummary?: {
+    humanReviewReason?: string | null;
+    paymentReference?: string | null;
+    paymentConfirmedBy?: string | null;
+  };
 }
 
 export default function AdminDashboard() {
@@ -185,6 +190,51 @@ export default function AdminDashboard() {
     }
   };
 
+  const confirmPayment = async (leadId: string) => {
+    if (
+      !(await confirm({
+        title: 'Confirm payment',
+        message: 'Mark this investor payment as received and close the record?',
+        confirmLabel: 'Confirm payment',
+      }))
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/payment/${leadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirmedBy: 'osasisorae@gmail.com',
+        }),
+      });
+
+      if (response.ok) {
+        notify({
+          title: 'Payment confirmed',
+          message: 'The investor record has been moved to closed.',
+          tone: 'success',
+        });
+        fetchLeads();
+      } else {
+        const error = await response.json();
+        notify({
+          title: 'Confirmation failed',
+          message: error.error || 'Failed to confirm payment.',
+          tone: 'error',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to confirm payment:', error);
+      notify({
+        title: 'Confirmation failed',
+        message: 'Failed to confirm payment.',
+        tone: 'error',
+      });
+    }
+  };
+
   const deleteLead = async (leadId: string, email: string) => {
     if (
       !(await confirm({
@@ -229,8 +279,12 @@ export default function AdminDashboard() {
     }
   };
 
-  const getStageColor = (stage: string) => {
-    switch (stage) {
+  const getStageColor = (lead: Lead) => {
+    if (lead.stage === 'pending_human_review' && !lead.kyc_submitted_at) {
+      return 'bg-amber-100 text-amber-900';
+    }
+
+    switch (lead.stage) {
       case 'outreach_sent':
         return 'bg-blue-100 text-blue-800';
       case 'qualifying':
@@ -244,7 +298,11 @@ export default function AdminDashboard() {
       case 'agreement_pending':
         return 'bg-green-100 text-green-800';
       case 'agreement_signed':
-        return 'bg-green-200 text-green-900';
+        return 'bg-emerald-100 text-emerald-900';
+      case 'payment_pending':
+        return 'bg-indigo-100 text-indigo-900';
+      case 'closed':
+        return 'bg-slate-200 text-slate-900';
       case 'disqualified':
         return 'bg-rose-100 text-rose-800';
       default:
@@ -252,13 +310,22 @@ export default function AdminDashboard() {
     }
   };
 
-  const formatStageLabel = (stage: string) => {
-    if (stage === 'disqualified') {
+  const formatStageLabel = (lead: Lead) => {
+    if (lead.stage === 'pending_human_review' && !lead.kyc_submitted_at) {
+      return 'team review';
+    }
+
+    if (lead.stage === 'disqualified') {
       return 'not a fit';
     }
 
-    return stage.replace(/_/g, ' ');
+    return lead.stage.replace(/_/g, ' ');
   };
+
+  const isAgreementStage = (stage: string) =>
+    ['agreement_pending', 'agreement_signed', 'payment_pending', 'closed'].includes(
+      stage
+    );
 
   return (
     <div className="min-h-screen bg-futurex-bg">
@@ -361,10 +428,10 @@ export default function AdminDashboard() {
                         </h3>
                         <span
                           className={`text-xs px-3 py-1 rounded-full ${getStageColor(
-                            lead.stage
+                            lead
                           )}`}
                         >
-                          {formatStageLabel(lead.stage)}
+                          {formatStageLabel(lead)}
                         </span>
                       </div>
                       <p className="text-sm text-futurex-muted">
@@ -384,7 +451,10 @@ export default function AdminDashboard() {
                         lead.qualificationSummary?.ticketSize ||
                         lead.qualificationSummary?.kycWillingness ||
                         lead.qualificationSummary?.disqualificationReason ||
-                        lead.qualificationSummary?.futureInterestNote) && (
+                        lead.qualificationSummary?.futureInterestNote ||
+                        lead.opsSummary?.humanReviewReason ||
+                        lead.opsSummary?.paymentReference ||
+                        lead.opsSummary?.paymentConfirmedBy) && (
                         <div className="mt-3 space-y-2 text-sm">
                           {lead.qualificationSummary?.investorProfile && (
                             <p className="text-futurex-muted">
@@ -422,12 +492,31 @@ export default function AdminDashboard() {
                               {lead.qualificationSummary.futureInterestNote}
                             </div>
                           )}
+                          {lead.opsSummary?.humanReviewReason && (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100">
+                              <span className="font-medium">Team follow-up:</span>{' '}
+                              {lead.opsSummary.humanReviewReason}
+                            </div>
+                          )}
+                          {lead.opsSummary?.paymentReference && (
+                            <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-indigo-100">
+                              <span className="font-medium">Payment reference:</span>{' '}
+                              {lead.opsSummary.paymentReference}
+                            </div>
+                          )}
+                          {lead.opsSummary?.paymentConfirmedBy && (
+                            <p className="text-futurex-muted">
+                              <span className="text-futurex-ink font-medium">Payment confirmed by:</span>{' '}
+                              {lead.opsSummary.paymentConfirmedBy}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
 
                     <div className="flex gap-2">
-                      {lead.stage === 'pending_human_review' && (
+                      {lead.stage === 'pending_human_review' &&
+                        lead.kyc_submitted_at && (
                         <>
                           <button
                             onClick={() => approveKYC(lead.id)}
@@ -442,6 +531,22 @@ export default function AdminDashboard() {
                             Reject KYC
                           </button>
                         </>
+                      )}
+                      {lead.stage === 'payment_pending' && (
+                        <button
+                          onClick={() => confirmPayment(lead.id)}
+                          className="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700"
+                        >
+                          Confirm Payment
+                        </button>
+                      )}
+                      {isAgreementStage(lead.stage) && (
+                        <Link
+                          href={`/agreement/${lead.id}`}
+                          className="border border-futurex-line px-4 py-2 rounded text-sm text-futurex-ink hover:border-futurex-gold hover:text-futurex-gold"
+                        >
+                          View Agreement
+                        </Link>
                       )}
                       <Link
                         href={`/chat/${lead.id}`}

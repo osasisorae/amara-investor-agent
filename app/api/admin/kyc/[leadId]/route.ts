@@ -31,6 +31,13 @@ export async function POST(
       );
     }
 
+    if (!lead.kyc_submitted_at) {
+      return NextResponse.json(
+        { error: 'Lead is pending team follow-up, not KYC review' },
+        { status: 400 }
+      );
+    }
+
     if (action === 'approve') {
       // Approve KYC
       await approveKYC(leadId, approvedBy);
@@ -43,7 +50,10 @@ export async function POST(
       });
 
       // Send approval email with agreement link
-      const agreementLink = `${process.env.NEXT_PUBLIC_APP_URL}/chat/${leadId}`;
+      const appUrl =
+        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+        new URL(request.url).origin;
+      const agreementLink = `${appUrl}/agreement/${leadId}`;
       const emailTemplate = getKYCApprovalEmailTemplate({
         investorName: lead.full_name || 'Investor',
         agreementLink,

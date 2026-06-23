@@ -1,27 +1,28 @@
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
+import {
+  MINIMUM_HOLD_YEARS,
+  MINIMUM_TICKET_NGN,
+} from '@/lib/agent/qualification';
+import {
+  AGREEMENT_VERSION,
+  EXIT_STRATEGY,
+  SPV_NAME,
+  TARGET_RETURN,
+} from '@/lib/agreement/template';
 
-function getAssetUrl(path: string): string | null {
-  if (!APP_URL) {
-    return null;
-  }
+const HTML_EMAIL_FOOTER = `
+  <p>
+    FutureX Nexus Development Limited<br>
+    <a href="https://investfuturex.com" style="color: inherit; text-decoration: none;">investfuturex.com</a>
+  </p>
+`;
 
-  return `${APP_URL}${path}`;
-}
+const TEXT_EMAIL_FOOTER = `FutureX Nexus Development Limited
+investfuturex.com`;
 
 function getEmailHeaderMarkup(): string {
-  const futurexWordmarkUrl = getAssetUrl('/futurex-wordmark-email.png');
-
-  if (futurexWordmarkUrl) {
-    return `
-    <div class="header">
-      <img class="wordmark" src="${futurexWordmarkUrl}" alt="FutureX" width="180" />
-    </div>
-    `;
-  }
-
   return `
   <div class="header">
-    <div class="logo">FutureX</div>
+    <h1 style="font-family:Georgia,serif;color:#111;">FutureX</h1>
   </div>
   `;
 }
@@ -37,8 +38,6 @@ function renderEmailLayout(content: string, footer: string): string {
     .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
     .card { background: #ffffff; border: 1px solid #ebe4da; border-radius: 18px; padding: 32px 28px; box-shadow: 0 18px 50px rgba(31, 26, 23, 0.08); }
     .header { border-bottom: 2px solid #c9a66b; padding-bottom: 20px; margin-bottom: 30px; }
-    .logo { font-family: 'DM Serif Display', serif; font-size: 24px; color: #1f1a17; }
-    .wordmark { display: block; width: 180px; max-width: 100%; height: auto; }
     .gold { color: #c9a66b; }
     .content { margin-bottom: 30px; }
     .cta { background: #c9a66b; color: #fff !important; padding: 14px 32px; text-decoration: none; border-radius: 999px; display: inline-block; font-weight: 600; margin: 20px 0; }
@@ -61,6 +60,22 @@ function renderEmailLayout(content: string, footer: string): string {
 </body>
 </html>
   `;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderPlainTextParagraphs(body: string): string {
+  return body
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br/>')}</p>`)
+    .join('');
 }
 
 export function getOutreachEmailTemplate(params: {
@@ -95,11 +110,7 @@ export function getOutreachEmailTemplate(params: {
       FutureX Investor Agent<br>
       <span class="gold">her@investfuturex.com</span></p>
     `,
-    `
-      <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
-      investfuturex.com · info@investfuturex.com</p>
-      <p style="font-size: 12px; margin-top: 20px;">You're receiving this because your email was added to our qualified investor register. If you believe this was sent in error, please reply and let us know.</p>
-    `
+    HTML_EMAIL_FOOTER
   );
 
   const text = `
@@ -125,9 +136,7 @@ Amara
 FutureX Investor Agent
 her@investfuturex.com
 
----
-FutureX · Real Estate Syndication for Nigerian Diaspora Investors
-investfuturex.com · info@investfuturex.com
+${TEXT_EMAIL_FOOTER}
   `;
 
   return { subject, html, text };
@@ -151,9 +160,9 @@ export function getKYCApprovalEmailTemplate(params: {
       
       <p>The agreement outlines:</p>
       <ul>
-        <li>Your fractional economic interest in the SPV (0.658% per ₦2.5M ticket)</li>
-        <li>Profit distribution structure (70% to investors, 30% to FutureX)</li>
-        <li>Timeline and exit provisions</li>
+        <li>Your subscription into the ${SPV_NAME}</li>
+        <li>The minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms</li>
+        <li>Target return framing (${TARGET_RETURN}) and governance terms</li>
         <li>Full risk disclosures</li>
       </ul>
       
@@ -167,10 +176,7 @@ export function getKYCApprovalEmailTemplate(params: {
       FutureX Investor Agent<br>
       <span class="gold">her@investfuturex.com</span></p>
     `,
-    `
-      <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
-      investfuturex.com · info@investfuturex.com</p>
-    `
+    HTML_EMAIL_FOOTER
   );
 
   const text = `
@@ -181,9 +187,9 @@ Your KYC documents have been reviewed and approved by our compliance team. You'r
 Next Step: Review and sign your investment agreement
 
 The agreement outlines:
-- Your fractional economic interest in the SPV (0.658% per ₦2.5M ticket)
-- Profit distribution structure (70% to investors, 30% to FutureX)
-- Timeline and exit provisions
+- Your subscription into the ${SPV_NAME}
+- The minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms
+- Target return framing (${TARGET_RETURN}) and governance terms
 - Full risk disclosures
 
 Please review the agreement carefully. Once you're ready to proceed, you'll sign electronically with an OTP verification sent to your email.
@@ -196,9 +202,7 @@ Amara
 FutureX Investor Agent
 her@investfuturex.com
 
----
-FutureX · Real Estate Syndication for Nigerian Diaspora Investors
-investfuturex.com · info@investfuturex.com
+${TEXT_EMAIL_FOOTER}
   `;
 
   return { subject, html, text };
@@ -235,10 +239,7 @@ export function getDealRoomAccessEmailTemplate(params: {
       FutureX Investor Agent<br>
       <span class="gold">her@investfuturex.com</span></p>
     `,
-    `
-      <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
-      investfuturex.com · info@investfuturex.com</p>
-    `
+    HTML_EMAIL_FOOTER
   );
 
   const text = `
@@ -260,9 +261,150 @@ Amara
 FutureX Investor Agent
 her@investfuturex.com
 
----
-FutureX · Real Estate Syndication for Nigerian Diaspora Investors
-investfuturex.com · info@investfuturex.com
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
+export function getOtpEmailTemplate(params: {
+  investorName: string;
+  otpCode: string;
+  expiryMinutes: number;
+}): { subject: string; html: string; text: string } {
+  const subject = 'Your FutureX signing verification code';
+
+  const html = renderEmailLayout(
+    `
+      <h2>Hello ${params.investorName},</h2>
+
+      <p>Use the verification code below to complete signing for the ${SPV_NAME} agreement.</p>
+
+      <div class="alert" style="font-size: 24px; letter-spacing: 0.2em; font-weight: 700;">
+        ${params.otpCode}
+      </div>
+
+      <p>This code expires in ${params.expiryMinutes} minutes. If you did not request it, please ignore this email and contact FutureX.</p>
+
+      <p><strong>Agreement version:</strong> ${AGREEMENT_VERSION}</p>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+Hello ${params.investorName},
+
+Use the verification code below to complete signing for the ${SPV_NAME} agreement:
+
+${params.otpCode}
+
+This code expires in ${params.expiryMinutes} minutes.
+Agreement version: ${AGREEMENT_VERSION}
+
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
+export function getAdminHumanReviewEmailTemplate(params: {
+  investorEmail: string;
+  leadId: string;
+  reason: string;
+  chatLink: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `Human review requested for ${params.investorEmail}`;
+
+  const html = renderEmailLayout(
+    `
+      <h2>Human review requested</h2>
+
+      <p>Amara flagged a lead for manual follow-up.</p>
+
+      <ul>
+        <li><strong>Lead:</strong> ${params.investorEmail}</li>
+        <li><strong>Lead ID:</strong> ${params.leadId}</li>
+        <li><strong>Reason:</strong> ${escapeHtml(params.reason)}</li>
+      </ul>
+
+      <a href="${params.chatLink}" class="cta">Open Conversation →</a>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+Human review requested
+
+Lead: ${params.investorEmail}
+Lead ID: ${params.leadId}
+Reason: ${params.reason}
+
+Open conversation: ${params.chatLink}
+
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
+export function getPaymentInstructionsEmailTemplate(params: {
+  investorName: string;
+  paymentReference: string;
+  bankDetails: string;
+  commitmentLabel: string;
+  deadlineLabel: string;
+}): { subject: string; html: string; text: string } {
+  const subject = 'Your FutureX payment instructions';
+
+  const html = renderEmailLayout(
+    `
+      <h2>Thank you, ${params.investorName}.</h2>
+
+      <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>. Your payment instructions are now ready.</p>
+
+      <div class="alert">
+        <strong>Payment reference:</strong> ${params.paymentReference}<br/>
+        <strong>Recorded commitment:</strong> ${params.commitmentLabel}<br/>
+        <strong>Deadline:</strong> ${params.deadlineLabel}
+      </div>
+
+      <p>Please include the payment reference exactly as written in your transfer narration.</p>
+
+      <p><strong>Bank details</strong></p>
+      ${renderPlainTextParagraphs(params.bankDetails)}
+
+      <p>What happens next:</p>
+      <ul>
+        <li>Send the transfer using the payment reference above</li>
+        <li>Our team confirms receipt and allocation</li>
+        <li>You receive the final onboarding confirmation and next-step updates</li>
+      </ul>
+
+      <p>This investment is structured around a minimum ticket size of <strong>${`₦${MINIMUM_TICKET_NGN.toLocaleString('en-NG')}`}</strong>, a <strong>${MINIMUM_HOLD_YEARS}-year</strong> hold period, and an expected exit via <strong>${EXIT_STRATEGY.toLowerCase()}</strong>.</p>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+Thank you, ${params.investorName}.
+
+Your agreement has been signed for the ${SPV_NAME}. Your payment instructions are now ready.
+
+Payment reference: ${params.paymentReference}
+Recorded commitment: ${params.commitmentLabel}
+Deadline: ${params.deadlineLabel}
+
+Please include the payment reference exactly as written in your transfer narration.
+
+Bank details:
+${params.bankDetails}
+
+What happens next:
+- Send the transfer using the payment reference above
+- Our team confirms receipt and allocation
+- You receive the final onboarding confirmation and next-step updates
+
+${TEXT_EMAIL_FOOTER}
   `;
 
   return { subject, html, text };
