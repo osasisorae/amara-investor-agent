@@ -45,7 +45,7 @@ export async function getMessagesByLeadId(leadId: string): Promise<Message[]> {
 
 export async function getConversationHistory(
   leadId: string
-): Promise<Array<{ role: 'agent' | 'investor' | 'system'; content: string }>> {
+): Promise<Array<{ role: 'assistant' | 'user'; content: string }>> {
   const messages = await getMessagesByLeadId(leadId);
   return messages.map((msg) => ({
     role: msg.role === 'agent' ? ('assistant' as const) : ('user' as const),

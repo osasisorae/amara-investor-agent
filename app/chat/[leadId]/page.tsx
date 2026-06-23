@@ -43,7 +43,7 @@ export default function ChatPage() {
     try {
       const response = await fetch(`/api/chat/${leadId}`);
       const data = await response.json();
-      
+
       if (response.ok) {
         setMessages(data.messages || []);
         setLead(data.lead);
@@ -67,7 +67,6 @@ export default function ChatPage() {
     setInput('');
     setSending(true);
 
-    // Optimistically add user message
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
       role: 'investor',
@@ -86,7 +85,6 @@ export default function ChatPage() {
       const data = await response.json();
 
       if (response.ok) {
-        // Add agent response
         const agentMsg: Message = {
           id: `agent-${Date.now()}`,
           role: 'agent',
@@ -95,7 +93,6 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, agentMsg]);
 
-        // Update stage if changed
         if (data.stage && lead) {
           setLead({ ...lead, stage: data.stage });
         }
@@ -190,24 +187,20 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-futurex-bg flex flex-col">
-      {/* Header */}
       <header className="border-b border-futurex-line bg-futurex-surface">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/futurex-wordmark-v3a.png"
-              alt="FutureX"
-              width={100}
-              height={24}
-              className="brightness-0 invert opacity-90"
-            />
-            <div className="border-l border-futurex-line pl-4">
-              <div className="text-futurex-gold font-semibold text-sm">
-                Amara
-              </div>
-              <div className="text-futurex-muted text-xs">
-                Your Investment Guide
-              </div>
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="rounded-full border border-futurex-gold-border bg-[#fffdf8] px-4 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+              <Image
+                src="/amara-wordmark-cropped.jpeg"
+                alt="Amara"
+                width={126}
+                height={40}
+                className="h-auto w-[104px] opacity-90 sm:w-[126px]"
+              />
+            </div>
+            <div className="text-xs tracking-[0.18em] uppercase text-futurex-muted">
+              by FutureX
             </div>
           </div>
           <div className="text-xs px-3 py-1 bg-futurex-gold-soft text-futurex-gold rounded-full border border-futurex-gold-border">
@@ -216,20 +209,31 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* Messages */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
           {messages.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="mx-auto max-w-xl rounded-[28px] border border-futurex-line bg-futurex-surface p-8 text-center shadow-[0_24px_64px_rgba(0,0,0,0.25)]">
               <div className="inline-block bg-futurex-gold-soft border border-futurex-gold-border text-futurex-gold text-sm px-4 py-2 rounded-full mb-4">
                 Welcome to FutureX
               </div>
-              <h2 className="font-serif text-2xl text-futurex-ink mb-3">
-                Hi, I'm Amara
-              </h2>
+              <div className="mb-5 flex justify-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#fffdf8] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                  <Image
+                    src="/amara-icon-cropped.jpeg"
+                    alt="Amara icon"
+                    width={48}
+                    height={48}
+                    className="h-12 w-12 object-cover"
+                  />
+                </div>
+              </div>
+              <h2 className="mb-2 font-serif text-2xl text-futurex-ink">Amara</h2>
+              <div className="mb-4 text-[11px] tracking-[0.24em] uppercase text-futurex-muted">
+                FutureX investor guide
+              </div>
               <p className="text-futurex-muted max-w-md mx-auto">
-                I'm here to guide you through the FutureX investment process.
-                Let's start by understanding if this opportunity is right for
+                I&apos;m here to guide you through the FutureX investment process.
+                Let&apos;s start by understanding if this opportunity is right for
                 you.
               </p>
             </div>
@@ -241,36 +245,40 @@ export default function ChatPage() {
                   msg.role === 'investor' ? 'justify-end' : 'justify-start'
                 }`}
               >
-                <div
-                  className={`max-w-2xl rounded-lg px-5 py-3 ${
-                    msg.role === 'investor'
-                      ? 'bg-futurex-gold text-futurex-bg'
-                      : 'bg-futurex-surface border border-futurex-line text-futurex-ink'
-                  }`}
-                >
-                  {msg.role === 'agent' && (
-                    <div className="text-xs text-futurex-gold mb-1 font-semibold">
-                      Amara
+                {msg.role === 'agent' ? (
+                  <div className="flex max-w-3xl items-start gap-3">
+                    <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
+                      <Image
+                        src="/amara-icon-cropped.jpeg"
+                        alt="Amara icon"
+                        width={36}
+                        height={36}
+                        className="h-full w-full object-cover"
+                      />
                     </div>
-                  )}
-                  <div 
-                    className="whitespace-pre-wrap markdown-content"
-                    dangerouslySetInnerHTML={{ 
-                      __html: msg.role === 'agent' 
-                        ? markdownToHtml(msg.content)
-                        : msg.content 
-                    }}
-                  />
-                  <div
-                    className={`text-xs mt-2 ${
-                      msg.role === 'investor'
-                        ? 'text-futurex-bg/70'
-                        : 'text-futurex-muted'
-                    }`}
-                  >
-                    {new Date(msg.created_at * 1000).toLocaleTimeString()}
+                    <div className="max-w-2xl rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink">
+                      <div className="mb-1 text-xs font-semibold text-futurex-gold">
+                        Amara
+                      </div>
+                      <div
+                        className="whitespace-pre-wrap markdown-content"
+                        dangerouslySetInnerHTML={{
+                          __html: markdownToHtml(msg.content),
+                        }}
+                      />
+                      <div className="mt-2 text-xs text-futurex-muted">
+                        {new Date(msg.created_at * 1000).toLocaleTimeString()}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="max-w-2xl rounded-2xl bg-futurex-gold px-5 py-3 text-futurex-bg">
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    <div className="mt-2 text-xs text-futurex-bg/70">
+                      {new Date(msg.created_at * 1000).toLocaleTimeString()}
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -278,10 +286,8 @@ export default function ChatPage() {
         </div>
       </main>
 
-      {/* Input */}
       <footer className="border-t border-futurex-line bg-futurex-surface">
         <div className="max-w-4xl mx-auto px-6 py-4">
-          {/* KYC Upload Section */}
           {lead?.stage === 'kyc_intake' && (
             <div className="mb-4 p-4 bg-futurex-surface2 border border-futurex-gold-border rounded-lg">
               <h3 className="text-futurex-gold font-semibold mb-3">Upload KYC Documents</h3>

@@ -1,32 +1,76 @@
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
+
+function getAssetUrl(path: string): string | null {
+  if (!APP_URL) {
+    return null;
+  }
+
+  return `${APP_URL}${path}`;
+}
+
+function getEmailHeaderMarkup(): string {
+  const futurexWordmarkUrl = getAssetUrl('/futurex-wordmark-email.png');
+
+  if (futurexWordmarkUrl) {
+    return `
+    <div class="header">
+      <img class="wordmark" src="${futurexWordmarkUrl}" alt="FutureX" width="180" />
+    </div>
+    `;
+  }
+
+  return `
+  <div class="header">
+    <div class="logo">FutureX</div>
+  </div>
+  `;
+}
+
+function renderEmailLayout(content: string, footer: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'DM Sans', -apple-system, sans-serif; line-height: 1.6; color: #1f1a17; margin: 0; background: #f8f5f0; }
+    .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+    .card { background: #ffffff; border: 1px solid #ebe4da; border-radius: 18px; padding: 32px 28px; box-shadow: 0 18px 50px rgba(31, 26, 23, 0.08); }
+    .header { border-bottom: 2px solid #c9a66b; padding-bottom: 20px; margin-bottom: 30px; }
+    .logo { font-family: 'DM Serif Display', serif; font-size: 24px; color: #1f1a17; }
+    .wordmark { display: block; width: 180px; max-width: 100%; height: auto; }
+    .gold { color: #c9a66b; }
+    .content { margin-bottom: 30px; }
+    .cta { background: #c9a66b; color: #fff !important; padding: 14px 32px; text-decoration: none; border-radius: 999px; display: inline-block; font-weight: 600; margin: 20px 0; }
+    .alert { background: #f5e8ea; border-left: 4px solid #722f37; padding: 16px; margin: 20px 0; }
+    .footer { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 40px; font-size: 14px; color: #6f655d; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      ${getEmailHeaderMarkup()}
+      <div class="content">
+        ${content}
+      </div>
+      <div class="footer">
+        ${footer}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
 export function getOutreachEmailTemplate(params: {
   investorEmail: string;
   chatLink: string;
 }): { subject: string; html: string; text: string } {
   const subject = 'Welcome to FutureX - Let\'s Start the Conversation';
 
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: 'DM Sans', -apple-system, sans-serif; line-height: 1.6; color: #1f1a17; }
-    .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
-    .header { border-bottom: 2px solid #c9a66b; padding-bottom: 20px; margin-bottom: 30px; }
-    .logo { font-family: 'DM Serif Display', serif; font-size: 24px; color: #1f1a17; }
-    .gold { color: #c9a66b; }
-    .content { margin-bottom: 30px; }
-    .cta { background: #c9a66b; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600; margin: 20px 0; }
-    .footer { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 40px; font-size: 14px; color: #6f655d; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">FutureX</div>
-    </div>
-    
-    <div class="content">
+  const html = renderEmailLayout(
+    `
       <h2>Hi there,</h2>
       
       <p>Your email was recently added to our investor offeree register by the FutureX team. I wanted to personally reach out and introduce myself.</p>
@@ -50,17 +94,13 @@ export function getOutreachEmailTemplate(params: {
       <p><strong>Amara</strong><br>
       FutureX Investor Agent<br>
       <span class="gold">her@investfuturex.com</span></p>
-    </div>
-    
-    <div class="footer">
+    `,
+    `
       <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
       investfuturex.com · info@investfuturex.com</p>
       <p style="font-size: 12px; margin-top: 20px;">You're receiving this because your email was added to our qualified investor register. If you believe this was sent in error, please reply and let us know.</p>
-    </div>
-  </div>
-</body>
-</html>
-  `;
+    `
+  );
 
   const text = `
 Hi there,
@@ -99,30 +139,8 @@ export function getKYCApprovalEmailTemplate(params: {
 }): { subject: string; html: string; text: string } {
   const subject = 'KYC Approved - Your Investment Agreement is Ready';
 
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: 'DM Sans', -apple-system, sans-serif; line-height: 1.6; color: #1f1a17; }
-    .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
-    .header { border-bottom: 2px solid #c9a66b; padding-bottom: 20px; margin-bottom: 30px; }
-    .logo { font-family: 'DM Serif Display', serif; font-size: 24px; color: #1f1a17; }
-    .gold { color: #c9a66b; }
-    .content { margin-bottom: 30px; }
-    .cta { background: #c9a66b; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600; margin: 20px 0; }
-    .alert { background: #f5e8ea; border-left: 4px solid #722f37; padding: 16px; margin: 20px 0; }
-    .footer { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 40px; font-size: 14px; color: #6f655d; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">FutureX</div>
-    </div>
-    
-    <div class="content">
+  const html = renderEmailLayout(
+    `
       <h2>Great news, ${params.investorName}!</h2>
       
       <p>Your KYC documents have been reviewed and <strong class="gold">approved</strong> by our compliance team. You're now ready to proceed with the investment agreement.</p>
@@ -148,16 +166,12 @@ export function getKYCApprovalEmailTemplate(params: {
       <p><strong>Amara</strong><br>
       FutureX Investor Agent<br>
       <span class="gold">her@investfuturex.com</span></p>
-    </div>
-    
-    <div class="footer">
+    `,
+    `
       <p>FutureX · Real Estate Syndication for Nigerian Diaspora Investors<br>
       investfuturex.com · info@investfuturex.com</p>
-    </div>
-  </div>
-</body>
-</html>
-  `;
+    `
+  );
 
   const text = `
 Great news, ${params.investorName}!

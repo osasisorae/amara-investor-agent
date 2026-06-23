@@ -7,13 +7,15 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-futurex-line">
         <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
-          <Image
-            src="/futurex-wordmark-v3a.png"
-            alt="FutureX"
-            width={120}
-            height={28}
-            className="brightness-0 invert opacity-90"
-          />
+          <div className="rounded-xl bg-[#fffdf8] px-3 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+            <Image
+              src="/futurex-wordmark-email.png"
+              alt="FutureX"
+              width={132}
+              height={74}
+              className="h-7 w-auto"
+            />
+          </div>
           <Link
             href="/admin"
             className="text-sm text-futurex-muted hover:text-futurex-gold transition"
