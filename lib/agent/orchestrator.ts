@@ -1,9 +1,23 @@
 import { Lead, LeadStage } from '../db/leads';
+import { updateLead } from '../db/leads';
 import { getConversationHistory, saveMessage } from '../db/messages';
 import { logAuditEvent } from '../db/audit';
+import {
+  getLatestQualificationAnswerMap,
+  saveQualificationAnswer,
+} from '../db/qualification';
 import { callQwenWithSystemPrompt } from '../qwen/client';
 import { getSystemPromptForStage } from './prompts';
 import { loadKnowledgeBase } from '../knowledge-base/loader';
+import {
+  assessQualificationResponse,
+  buildFutureInterestNote,
+  detectFutureInterestRequest,
+  getDisqualificationReason,
+  getNextQualificationQuestion,
+  QUALIFICATION_SEQUENCE,
+  type QualificationQuestion,
+} from './qualification';
 
 export interface OrchestratorResponse {
   message: string;
@@ -45,8 +59,12 @@ export class AgentOrchestrator {
     let response: OrchestratorResponse;
 
     switch (lead.stage) {
+      case 'outreach_sent':
       case 'qualifying':
         response = await this.handleQualification(lead, investorMessage);
+        break;
+      case 'disqualified':
+        response = await this.handleDisqualifiedFollowUp(lead, investorMessage);
         break;
       case 'deal_room':
         response = await this.handleDealRoomQuery(lead, investorMessage);
@@ -79,6 +97,52 @@ export class AgentOrchestrator {
     lead: Lead,
     message: string
   ): Promise<OrchestratorResponse> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+    const currentQuestion = getNextQualificationQuestion(
+      Object.keys(latestAnswers)
+    );
+    let failedQuestion: QualificationQuestion | null = null;
+    let disqualificationReason: string | null = null;
+
+    if (currentQuestion) {
+      const assessment = assessQualificationResponse(currentQuestion, message);
+
+      if (assessment?.matched) {
+        await saveQualificationAnswer({
+          leadId: lead.id,
+          question: assessment.question,
+          answer: message,
+          passed: assessment.passed,
+        });
+
+        latestAnswers[assessment.question] = {
+          id: `derived-${assessment.question}`,
+          lead_id: lead.id,
+          question: assessment.question,
+          answer: message,
+          passed: assessment.passed ? 1 : 0,
+          created_at: Math.floor(Date.now() / 1000),
+        };
+
+        if (assessment.location) {
+          await updateLead(lead.id, { country: assessment.location });
+        }
+
+        if (!assessment.passed) {
+          failedQuestion = assessment.question;
+          disqualificationReason =
+            assessment.reason || getDisqualificationReason(assessment.question);
+        }
+      }
+    }
+
+    if (lead.stage === 'outreach_sent') {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'qualification_started',
+      });
+    }
+
     const conversationHistory = await getConversationHistory(lead.id);
     const systemPrompt = getSystemPromptForStage('qualifying');
 
@@ -88,9 +152,48 @@ export class AgentOrchestrator {
       conversationHistory
     );
 
-    // Check if qualification is complete
-    // For hackathon: simple keyword detection
-    // In production: more sophisticated NLU
+    if (failedQuestion && disqualificationReason) {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'qualification_failed',
+        metadata: {
+          criterion: failedQuestion,
+          reason: disqualificationReason,
+          answer: message,
+        },
+      });
+
+      return {
+        message: response,
+        shouldUpdateStage: 'disqualified',
+        metadata: {
+          disqualified: true,
+          criterion: failedQuestion,
+          reason: disqualificationReason,
+        },
+      };
+    }
+
+    const allCriteriaPassed = QUALIFICATION_SEQUENCE.every(
+      (question) => latestAnswers[question]?.passed === 1
+    );
+
+    if (allCriteriaPassed) {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'qualification_passed',
+        metadata: {
+          criteria: QUALIFICATION_SEQUENCE,
+        },
+      });
+
+      return {
+        message: response,
+        shouldUpdateStage: 'deal_room',
+        metadata: { qualified: true },
+      };
+    }
+
     const isQualified = this.detectQualificationComplete(response);
     const isDisqualified = this.detectDisqualification(response);
 
@@ -108,19 +211,31 @@ export class AgentOrchestrator {
     }
 
     if (isDisqualified) {
+      const fallbackReason = currentQuestion
+        ? getDisqualificationReason(currentQuestion)
+        : 'AI identified this lead as not a fit for the current opportunity.';
+
       await logAuditEvent({
         leadId: lead.id,
         eventType: 'qualification_failed',
+        metadata: {
+          criterion: currentQuestion,
+          reason: fallbackReason,
+          answer: message,
+        },
       });
 
       return {
         message: response,
         shouldUpdateStage: 'disqualified',
-        metadata: { disqualified: true },
+        metadata: { disqualified: true, reason: fallbackReason },
       };
     }
 
-    return { message: response };
+    return {
+      message: response,
+      shouldUpdateStage: lead.stage === 'outreach_sent' ? 'qualifying' : undefined,
+    };
   }
 
   /**
@@ -197,6 +312,43 @@ export class AgentOrchestrator {
     };
   }
 
+  private async handleDisqualifiedFollowUp(
+    lead: Lead,
+    message: string
+  ): Promise<OrchestratorResponse> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+    const failedQuestion = QUALIFICATION_SEQUENCE.find(
+      (question) => latestAnswers[question]?.passed === 0
+    );
+
+    if (detectFutureInterestRequest(message)) {
+      const note = buildFutureInterestNote(message, failedQuestion);
+
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'future_interest_noted',
+        metadata: {
+          note,
+          failed_criterion: failedQuestion,
+        },
+      });
+
+      return {
+        message:
+          "Noted. I've recorded your interest for future opportunities that may be a better fit, and our team can follow up when something aligned becomes available.",
+        metadata: {
+          future_interest: true,
+          note,
+        },
+      };
+    }
+
+    return {
+      message:
+        "This specific opportunity is not the right fit based on your qualification responses. If you'd like, I can note your interest for future offerings that may align better with your goals.",
+    };
+  }
+
   /**
    * Helper: Detect if qualification is complete
    */
@@ -225,6 +377,10 @@ export class AgentOrchestrator {
       'cannot proceed',
       'unfortunately',
       'minimum requirement',
+      'not the right fit',
+      'isn’t the right fit',
+      "isn't the right fit",
+      'not a fit',
     ];
 
     const lowerResponse = response.toLowerCase();

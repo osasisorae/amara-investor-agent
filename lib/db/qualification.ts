@@ -1,10 +1,11 @@
 import { nanoid } from 'nanoid';
 import { execute, query } from './client';
+import type { QualificationQuestion } from '../agent/qualification';
 
 export interface QualificationAnswer {
   id: string;
   lead_id: string;
-  question: string;
+  question: QualificationQuestion | string;
   answer: string;
   passed: number;
   created_at: number;
@@ -12,7 +13,7 @@ export interface QualificationAnswer {
 
 export async function saveQualificationAnswer(data: {
   leadId: string;
-  question: string;
+  question: QualificationQuestion | string;
   answer: string;
   passed: boolean;
 }): Promise<void> {
@@ -33,6 +34,19 @@ export async function getQualificationAnswers(
     'SELECT * FROM qualification_answers WHERE lead_id = ? ORDER BY created_at ASC',
     [leadId]
   );
+}
+
+export async function getLatestQualificationAnswerMap(
+  leadId: string
+): Promise<Record<string, QualificationAnswer>> {
+  const answers = await getQualificationAnswers(leadId);
+  const latest: Record<string, QualificationAnswer> = {};
+
+  for (const answer of answers) {
+    latest[answer.question] = answer;
+  }
+
+  return latest;
 }
 
 export async function hasPassedQualification(leadId: string): Promise<boolean> {

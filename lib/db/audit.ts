@@ -6,6 +6,7 @@ export type AuditEventType =
   | 'qualification_started'
   | 'qualification_passed'
   | 'qualification_failed'
+  | 'future_interest_noted'
   | 'deal_room_accessed'
   | 'kyc_submitted'
   | 'kyc_approved'

@@ -9,8 +9,17 @@ interface Lead {
   email: string;
   stage: string;
   full_name?: string;
+  country?: string;
   created_at: number;
   kyc_submitted_at?: number;
+  qualificationSummary?: {
+    investorProfile?: string | null;
+    investmentHorizon?: string | null;
+    ticketSize?: string | null;
+    kycWillingness?: string | null;
+    disqualificationReason?: string | null;
+    futureInterestNote?: string | null;
+  };
 }
 
 export default function AdminDashboard() {
@@ -157,10 +166,18 @@ export default function AdminDashboard() {
       case 'agreement_signed':
         return 'bg-green-200 text-green-900';
       case 'disqualified':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-rose-100 text-rose-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const formatStageLabel = (stage: string) => {
+    if (stage === 'disqualified') {
+      return 'not a fit';
+    }
+
+    return stage.replace(/_/g, ' ');
   };
 
   return (
@@ -267,7 +284,7 @@ export default function AdminDashboard() {
                             lead.stage
                           )}`}
                         >
-                          {lead.stage.replace(/_/g, ' ')}
+                          {formatStageLabel(lead.stage)}
                         </span>
                       </div>
                       <p className="text-sm text-futurex-muted">
@@ -277,6 +294,56 @@ export default function AdminDashboard() {
                         Added:{' '}
                         {new Date(lead.created_at * 1000).toLocaleDateString()}
                       </p>
+                      {lead.country && (
+                        <p className="text-xs text-futurex-muted mt-1">
+                          Location: {lead.country}
+                        </p>
+                      )}
+                      {(lead.qualificationSummary?.investorProfile ||
+                        lead.qualificationSummary?.investmentHorizon ||
+                        lead.qualificationSummary?.ticketSize ||
+                        lead.qualificationSummary?.kycWillingness ||
+                        lead.qualificationSummary?.disqualificationReason ||
+                        lead.qualificationSummary?.futureInterestNote) && (
+                        <div className="mt-3 space-y-2 text-sm">
+                          {lead.qualificationSummary?.investorProfile && (
+                            <p className="text-futurex-muted">
+                              <span className="text-futurex-ink font-medium">Profile:</span>{' '}
+                              {lead.qualificationSummary.investorProfile}
+                            </p>
+                          )}
+                          {lead.qualificationSummary?.investmentHorizon && (
+                            <p className="text-futurex-muted">
+                              <span className="text-futurex-ink font-medium">Horizon:</span>{' '}
+                              {lead.qualificationSummary.investmentHorizon}
+                            </p>
+                          )}
+                          {lead.qualificationSummary?.ticketSize && (
+                            <p className="text-futurex-muted">
+                              <span className="text-futurex-ink font-medium">Ticket:</span>{' '}
+                              {lead.qualificationSummary.ticketSize}
+                            </p>
+                          )}
+                          {lead.qualificationSummary?.kycWillingness && (
+                            <p className="text-futurex-muted">
+                              <span className="text-futurex-ink font-medium">KYC:</span>{' '}
+                              {lead.qualificationSummary.kycWillingness}
+                            </p>
+                          )}
+                          {lead.qualificationSummary?.disqualificationReason && (
+                            <div className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-rose-200">
+                              <span className="font-medium">Not a fit:</span>{' '}
+                              {lead.qualificationSummary.disqualificationReason}
+                            </div>
+                          )}
+                          {lead.qualificationSummary?.futureInterestNote && (
+                            <div className="rounded-lg border border-futurex-gold-border bg-futurex-gold-soft px-3 py-2 text-futurex-gold">
+                              <span className="font-medium">Future interest:</span>{' '}
+                              {lead.qualificationSummary.futureInterestNote}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex gap-2">
