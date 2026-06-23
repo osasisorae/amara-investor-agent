@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
+import { markdownToHtml } from '@/lib/utils/markdown';
 
 interface Message {
   id: string;
@@ -202,7 +203,14 @@ export default function ChatPage() {
                       Amara
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  <div 
+                    className="whitespace-pre-wrap markdown-content"
+                    dangerouslySetInnerHTML={{ 
+                      __html: msg.role === 'agent' 
+                        ? markdownToHtml(msg.content)
+                        : msg.content 
+                    }}
+                  />
                   <div
                     className={`text-xs mt-2 ${
                       msg.role === 'investor'
