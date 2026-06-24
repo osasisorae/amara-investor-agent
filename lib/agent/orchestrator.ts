@@ -920,6 +920,7 @@ export class AgentOrchestrator {
     lead: Lead,
     context: ProcessMessageContext
   ): Promise<HandlerResult> {
+    console.log('[Orchestrator][KYC] Validating KYC package for lead:', lead.id);
     const result = await completeKycSubmission({
       lead,
       appUrl: normalizeOrigin(context.appUrl),
@@ -943,6 +944,12 @@ export class AgentOrchestrator {
         ],
       };
     }
+
+    console.log(
+      '[Orchestrator][KYC] KYC package complete. Advancing lead to pending_human_review:',
+      lead.id
+    );
+    await applyOrchestratorStageTransition(lead.id, 'pending_human_review');
 
     return {
       emissions: [
@@ -1192,6 +1199,14 @@ export class AgentOrchestrator {
           throw new Error(`Invalid lead stage: ${newStage}`);
         }
 
+        console.log(
+          '[Orchestrator] Tool requested stage transition:',
+          JSON.stringify({
+            leadId: lead.id,
+            from: lead.stage,
+            to: newStage,
+          })
+        );
         await applyOrchestratorStageTransition(lead.id, newStage);
 
         return {

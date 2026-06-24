@@ -5,6 +5,10 @@ import { getLeadByEmail } from '@/lib/db/leads';
 import { consumeOtpCode, createOtpCode } from '@/lib/db/otp';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getInvestorAccessOtpEmailTemplate } from '@/lib/email/templates';
+import {
+  setInvestorSessionCookie,
+  signInvestorSession,
+} from '@/lib/investor-auth';
 
 const CHAT_ACCESS_OTP_PURPOSE = 'chat_access';
 const CHAT_ACCESS_OTP_EXPIRY_MINUTES = 10;
@@ -127,10 +131,19 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       leadId: lead.id,
     });
+
+    const token = await signInvestorSession({
+      leadId: lead.id,
+      email: lead.email,
+      role: 'investor',
+    });
+    setInvestorSessionCookie(response, token);
+
+    return response;
   } catch (error) {
     console.error('Error verifying investor chat access OTP:', error);
     return NextResponse.json(

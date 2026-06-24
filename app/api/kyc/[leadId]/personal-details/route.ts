@@ -4,6 +4,7 @@ import { saveQualificationAnswer } from '@/lib/db/qualification';
 import { logAuditEvent } from '@/lib/db/audit';
 import { hasAuditEventForLead } from '@/lib/db/kyc';
 import { KYC_PERSONAL_DETAIL_FIELDS } from '@/lib/kyc/config';
+import { verifyInvestorSession } from '@/lib/investor-auth';
 
 interface PersonalDetailsPayload {
   full_legal_name: string;
@@ -49,6 +50,10 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    if (!(await verifyInvestorSession(request, leadId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = (await request.json()) as Record<string, unknown>;
 
     const lead = await getLeadById(leadId);

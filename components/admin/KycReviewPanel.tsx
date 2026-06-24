@@ -35,6 +35,11 @@ interface ReviewData {
   messages: ReviewMessage[];
 }
 
+interface ReviewDocumentsResponse {
+  documents: ReviewDocument[];
+  error?: string;
+}
+
 interface KycReviewPanelProps {
   leadId: string;
   isOpen: boolean;
@@ -89,10 +94,34 @@ export function KycReviewPanel({
           return;
         }
 
-        setData(payload);
+        const documentsResponse = await fetch(
+          `/api/admin/kyc/${leadId}/documents`,
+          {
+            cache: 'no-store',
+          }
+        );
+
+        if (onUnauthorized(documentsResponse)) {
+          return;
+        }
+
+        const documentsPayload =
+          (await documentsResponse.json()) as ReviewDocumentsResponse;
+
+        if (!documentsResponse.ok) {
+          setError(
+            documentsPayload.error || 'Failed to load KYC review details.'
+          );
+          return;
+        }
+
+        setData({
+          ...payload,
+          documents: documentsPayload.documents || [],
+        });
 
         const documentUrlEntries = await Promise.all(
-          (payload.documents || []).map(async (document) => {
+          (documentsPayload.documents || []).map(async (document) => {
             const urlResponse = await fetch(
               `/api/admin/kyc/${leadId}/document-url?filename=${encodeURIComponent(
                 document.filename

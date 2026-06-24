@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { KycUploadComponentData } from '@/lib/chat/components';
 import {
   getKycUploadSlots,
@@ -9,9 +9,23 @@ import {
 } from '@/lib/kyc/config';
 
 interface UploadState {
+  documentId?: string;
   filename?: string;
   error?: string;
   uploading: boolean;
+}
+
+interface PersistedKycDocument {
+  id: string;
+  doc_type: string;
+  filename: string;
+  uploaded_at: number;
+}
+
+interface UploadResponsePayload {
+  filename?: string;
+  document?: PersistedKycDocument;
+  error?: string;
 }
 
 interface KYCUploadCardProps {
@@ -29,6 +43,82 @@ function isAcceptedFile(file: File): boolean {
   return ['jpg', 'jpeg', 'png', 'pdf'].includes(extension || '');
 }
 
+function normalizeStoredDocType(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function getSlotForStoredDocType(docType: string): KycUploadSlot | null {
+  const normalized = normalizeStoredDocType(docType);
+
+  if (normalized === 'proof_of_address') {
+    return 'proof_of_address';
+  }
+
+  if (normalized === 'source_of_funds') {
+    return 'source_of_funds';
+  }
+
+  if (normalized.endsWith('_front')) {
+    return 'document_front';
+  }
+
+  if (normalized.endsWith('_back')) {
+    return 'document_back';
+  }
+
+  return null;
+}
+
+function matchesSelectedDocumentType(
+  docType: string,
+  documentType: KycPrimaryDocumentType
+): boolean {
+  const normalized = normalizeStoredDocType(docType);
+
+  if (
+    normalized === 'proof_of_address' ||
+    normalized === 'source_of_funds'
+  ) {
+    return true;
+  }
+
+  if (normalized.startsWith('passport_')) {
+    return documentType === 'passport';
+  }
+
+  if (normalized.startsWith('national_id_') || normalized.startsWith('id_')) {
+    return documentType === 'national_id';
+  }
+
+  if (
+    normalized.startsWith('drivers_licence_') ||
+    normalized.startsWith('drivers_license_') ||
+    normalized.startsWith('licence_') ||
+    normalized.startsWith('license_')
+  ) {
+    return documentType === 'drivers_licence';
+  }
+
+  return false;
+}
+
+async function parseJsonSafely<T>(
+  response: Response
+): Promise<T & { error?: string }> {
+  const raw = await response.text();
+
+  if (!raw) {
+    return {} as T & { error?: string };
+  }
+
+  try {
+    return JSON.parse(raw) as T & { error?: string };
+  } catch (error) {
+    console.error('Failed to parse JSON response:', error, raw);
+    return {} as T & { error?: string };
+  }
+}
+
 export function KYCUploadCard({
   leadId,
   data,
@@ -40,8 +130,80 @@ export function KYCUploadCard({
   const [uploads, setUploads] = useState<Partial<Record<KycUploadSlot, UploadState>>>(
     {}
   );
+  const [loadingExisting, setLoadingExisting] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadExistingUploads = async () => {
+      setLoadingExisting(true);
+      setLoadError('');
+
+      try {
+        const response = await fetch(`/api/kyc/${leadId}/documents`, {
+          cache: 'no-store',
+        });
+        const payload = await parseJsonSafely<{
+          documents?: PersistedKycDocument[];
+        }>(response);
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setUploads({});
+            setLoadError(
+              response.status === 401
+                ? 'Your secure investor session expired. Reopen the chat access link and try again.'
+                : payload.error || 'Failed to load your uploaded documents.'
+            );
+          }
+          return;
+        }
+
+        const nextUploads: Partial<Record<KycUploadSlot, UploadState>> = {};
+
+        for (const document of payload.documents || []) {
+          if (!matchesSelectedDocumentType(document.doc_type, documentType)) {
+            continue;
+          }
+
+          const slot = getSlotForStoredDocType(document.doc_type);
+
+          if (!slot) {
+            continue;
+          }
+
+          nextUploads[slot] = {
+            documentId: document.id,
+            filename: document.filename,
+            uploading: false,
+          };
+        }
+
+        if (!cancelled) {
+          setUploads(nextUploads);
+        }
+      } catch (error) {
+        console.error('Failed to load persisted KYC uploads:', error);
+        if (!cancelled) {
+          setUploads({});
+          setLoadError('Failed to load your uploaded documents.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingExisting(false);
+        }
+      }
+    };
+
+    void loadExistingUploads();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [documentType, leadId]);
 
   const updateSlot = (slot: KycUploadSlot, patch: Partial<UploadState>) => {
     setUploads((current) => ({
@@ -55,7 +217,7 @@ export function KYCUploadCard({
   };
 
   const uploadFile = async (slot: KycUploadSlot, file: File) => {
-    if (disabled || submitting) {
+    if (disabled || submitting || loadingExisting || uploads[slot]?.filename) {
       return;
     }
 
@@ -94,23 +256,25 @@ export function KYCUploadCard({
         method: 'POST',
         body: formData,
       });
-      const payload = (await response.json()) as {
-        filename?: string;
-        error?: string;
-      };
+      const payload = await parseJsonSafely<UploadResponsePayload>(response);
 
-      if (!response.ok || !payload.filename) {
+      if (!response.ok || !payload.filename || !payload.document?.id) {
         updateSlot(slot, {
-          error: payload.error || 'Upload failed.',
+          error:
+            response.status === 401
+              ? 'Your secure investor session expired. Reopen the chat access link and try again.'
+              : payload.error || 'Upload failed.',
           filename: undefined,
+          documentId: undefined,
           uploading: false,
         });
         return;
       }
 
       updateSlot(slot, {
+        documentId: payload.document.id,
         error: undefined,
-        filename: payload.filename,
+        filename: payload.document.filename || payload.filename,
         uploading: false,
       });
     } catch (error) {
@@ -123,12 +287,70 @@ export function KYCUploadCard({
     }
   };
 
+  const removeUploadedFile = async (slot: KycUploadSlot) => {
+    const currentUpload = uploads[slot];
+
+    if (
+      disabled ||
+      submitting ||
+      loadingExisting ||
+      !currentUpload?.documentId ||
+      !currentUpload.filename
+    ) {
+      return;
+    }
+
+    updateSlot(slot, {
+      documentId: currentUpload.documentId,
+      error: undefined,
+      filename: currentUpload.filename,
+      uploading: true,
+    });
+
+    try {
+      const response = await fetch(`/api/kyc/${leadId}/documents`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentId: currentUpload.documentId,
+        }),
+      });
+      const payload = await parseJsonSafely<{ error?: string }>(response);
+
+      if (!response.ok) {
+        updateSlot(slot, {
+          documentId: currentUpload.documentId,
+          error: payload.error || 'Failed to remove file.',
+          filename: currentUpload.filename,
+          uploading: false,
+        });
+        return;
+      }
+
+      setUploads((current) => {
+        const next = { ...current };
+        delete next[slot];
+        return next;
+      });
+    } catch (error) {
+      console.error('Failed to remove KYC document:', error);
+      updateSlot(slot, {
+        documentId: currentUpload.documentId,
+        error: 'Failed to remove file.',
+        filename: currentUpload.filename,
+        uploading: false,
+      });
+    }
+  };
+
   const allRequiredUploaded = slots.every(
     (slot) => !slot.required || Boolean(uploads[slot.key]?.filename)
   );
 
   const submit = async () => {
-    if (disabled || submitting || !allRequiredUploaded) {
+    if (disabled || submitting || loadingExisting || !allRequiredUploaded) {
       return;
     }
 
@@ -157,9 +379,16 @@ export function KYCUploadCard({
         Selected ID: {data?.documentTypeLabel || 'Identity document'}
       </p>
 
+      {loadError ? (
+        <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {loadError}
+        </div>
+      ) : null}
+
       <div className="mt-5 space-y-4">
         {slots.map((slot) => {
           const state = uploads[slot.key];
+          const hasUploadedFile = Boolean(state?.filename);
 
           return (
             <div
@@ -175,29 +404,65 @@ export function KYCUploadCard({
                     JPG, JPEG, PNG, or PDF. Max 5MB.
                   </div>
                 </div>
-                <label className="inline-flex cursor-pointer items-center rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold">
-                  <span>
-                    {state?.uploading ? 'Uploading...' : 'Choose file'}
-                  </span>
-                  <input
-                    type="file"
-                    accept={ACCEPTED_FILE_TYPES}
+                {hasUploadedFile ? (
+                  <button
+                    type="button"
+                    onClick={() => void removeUploadedFile(slot.key)}
                     disabled={disabled || submitting || state?.uploading}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        void uploadFile(slot.key, file);
+                    className="inline-flex items-center rounded-full border border-rose-500/30 px-4 py-2 text-sm text-rose-100 transition hover:border-rose-400 hover:text-rose-50 disabled:opacity-50"
+                  >
+                    {state?.uploading ? 'Removing...' : 'Remove'}
+                  </button>
+                ) : (
+                  <label className="inline-flex cursor-pointer items-center rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold">
+                    <span>
+                      {state?.uploading
+                        ? 'Uploading...'
+                        : loadingExisting
+                          ? 'Loading...'
+                          : 'Choose file'}
+                    </span>
+                    <input
+                      type="file"
+                      accept={ACCEPTED_FILE_TYPES}
+                      disabled={
+                        disabled ||
+                        submitting ||
+                        loadingExisting ||
+                        state?.uploading ||
+                        hasUploadedFile
                       }
-                      event.currentTarget.value = '';
-                    }}
-                    className="sr-only"
-                  />
-                </label>
+                      onChange={(event) => {
+                        try {
+                          const file = event.target.files?.[0];
+
+                          if (file) {
+                            void uploadFile(slot.key, file);
+                          }
+                        } catch (error) {
+                          console.error(
+                            'Failed to start KYC upload from file input:',
+                            error
+                          );
+                          updateSlot(slot.key, {
+                            error: 'Failed to read the selected file.',
+                            filename: undefined,
+                            documentId: undefined,
+                            uploading: false,
+                          });
+                        } finally {
+                          event.currentTarget.value = '';
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
               </div>
 
               {state?.filename ? (
                 <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-                  Uploaded: {state.filename}
+                  Uploaded: {state.filename} ✓
                 </div>
               ) : null}
 
@@ -220,7 +485,7 @@ export function KYCUploadCard({
       <button
         type="button"
         onClick={submit}
-        disabled={disabled || submitting || !allRequiredUploaded}
+        disabled={disabled || submitting || loadingExisting || !allRequiredUploaded}
         className="mt-5 rounded-full bg-futurex-gold px-5 py-3 text-sm font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
       >
         {submitting ? 'Submitting...' : 'Submit KYC'}

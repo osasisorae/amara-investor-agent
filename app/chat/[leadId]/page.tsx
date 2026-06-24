@@ -38,6 +38,7 @@ import { KYCConsentCard } from '@/components/deal-room/kyc/KYCConsentCard';
 import { KYCDocumentSelectorCard } from '@/components/deal-room/kyc/KYCDocumentSelectorCard';
 import { KYCPersonalDetailsCard } from '@/components/deal-room/kyc/KYCPersonalDetailsCard';
 import { KYCSubmittedCard } from '@/components/deal-room/kyc/KYCSubmittedCard';
+import { KYCUploadCardBoundary } from '@/components/deal-room/kyc/KYCUploadCardBoundary';
 import { KYCUploadCard } from '@/components/deal-room/kyc/KYCUploadCard';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
@@ -652,12 +653,14 @@ export default function ChatPage() {
         );
       case 'kyc_upload':
         return (
-          <KYCUploadCard
-            leadId={leadId}
-            data={message.metadata?.data as KycUploadComponentData}
-            disabled={sending || disableInput}
-            onSendPrompt={submitMessage}
-          />
+          <KYCUploadCardBoundary>
+            <KYCUploadCard
+              leadId={leadId}
+              data={message.metadata?.data as KycUploadComponentData}
+              disabled={sending || disableInput}
+              onSendPrompt={submitMessage}
+            />
+          </KYCUploadCardBoundary>
         );
       case 'kyc_submitted':
         return (

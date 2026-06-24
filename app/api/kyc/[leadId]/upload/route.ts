@@ -10,7 +10,8 @@ import {
   normalizeKycDocumentType,
   type KycUploadSlot,
 } from '@/lib/kyc/config';
-import { uploadFile } from '@/lib/storage/r2';
+import { getR2ConfigStatus, uploadFile } from '@/lib/storage/r2';
+import { verifyInvestorSession } from '@/lib/investor-auth';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'pdf']);
@@ -76,6 +77,23 @@ export async function POST(
   
   try {
     console.log('[KYC Upload] Starting upload for lead:', leadId);
+
+    if (!(await verifyInvestorSession(request, leadId))) {
+      console.error('[KYC Upload] Unauthorized upload attempt for lead:', leadId);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const r2Config = getR2ConfigStatus();
+    if (r2Config.missing.length > 0) {
+      console.error('[KYC Upload] Missing R2 configuration:', r2Config.missing);
+      return NextResponse.json(
+        {
+          error: 'Document storage is not configured correctly.',
+          details: `Missing: ${r2Config.missing.join(', ')}`,
+        },
+        { status: 500 }
+      );
+    }
     
     const lead = await getLeadById(leadId);
 
@@ -160,12 +178,13 @@ export async function POST(
     console.log('[KYC Upload] R2 Config check - Endpoint:', process.env.R2_ENDPOINT ? 'SET' : 'MISSING');
     console.log('[KYC Upload] R2 Config check - Access Key:', process.env.R2_ACCESS_KEY_ID ? 'SET' : 'MISSING');
     console.log('[KYC Upload] R2 Config check - Secret:', process.env.R2_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+    console.log('[KYC Upload] R2 Config check - Account ID:', process.env.R2_ACCOUNT_ID ? 'SET' : 'MISSING');
     console.log('[KYC Upload] R2 Config check - Bucket:', process.env.R2_BUCKET_NAME ? 'SET' : 'MISSING');
 
     const storedFilename = await uploadFile(buffer, filename, contentType);
     console.log('[KYC Upload] Successfully uploaded:', storedFilename);
 
-    await saveKycDocument({
+    const document = await saveKycDocument({
       leadId,
       docType: storedDocType,
       filename: storedFilename,
@@ -184,6 +203,12 @@ export async function POST(
     console.log('[KYC Upload] Complete for lead:', leadId);
     return NextResponse.json({
       filename: storedFilename,
+      document: {
+        id: document.id,
+        doc_type: document.docType,
+        filename: document.filename,
+        uploaded_at: document.uploadedAt,
+      },
     });
   } catch (error) {
     console.error('[KYC Upload] Error uploading KYC document for lead:', leadId);
@@ -206,6 +231,10 @@ export async function PATCH(
 ) {
   try {
     const { leadId } = params;
+    if (!(await verifyInvestorSession(request, leadId))) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const lead = await getLeadById(leadId);
 
     if (!lead) {

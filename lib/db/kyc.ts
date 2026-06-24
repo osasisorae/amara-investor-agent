@@ -102,6 +102,32 @@ export async function getKycDocumentByFilename(
   return row ? normalizeKycDocument(row) : null;
 }
 
+export async function getKycDocumentById(
+  leadId: string,
+  documentId: string
+): Promise<KycDocument | null> {
+  const row = await queryOne<KycDocumentRow>(
+    `SELECT id, lead_id, doc_type, file_url, file_name, file_size, uploaded_at
+     FROM kyc_documents
+     WHERE lead_id = ?
+       AND id = ?
+     LIMIT 1`,
+    [leadId, documentId]
+  );
+
+  return row ? normalizeKycDocument(row) : null;
+}
+
+export async function deleteKycDocumentById(
+  leadId: string,
+  documentId: string
+): Promise<void> {
+  await execute(
+    'DELETE FROM kyc_documents WHERE lead_id = ? AND id = ?',
+    [leadId, documentId]
+  );
+}
+
 export async function hasAuditEventForLead(
   leadId: string,
   eventType: string

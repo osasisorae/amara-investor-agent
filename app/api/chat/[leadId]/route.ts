@@ -13,6 +13,10 @@ import { orchestrator } from '@/lib/agent/orchestrator';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getDealRoomAccessEmailTemplate } from '@/lib/email/templates';
 import { logAuditEvent } from '@/lib/db/audit';
+import {
+  setInvestorSessionCookie,
+  signInvestorSession,
+} from '@/lib/investor-auth';
 
 const BINARY_QUALIFICATION_QUESTIONS = new Set<QualificationQuestion>([
   'investment_horizon',
@@ -62,11 +66,20 @@ export async function GET(
     const messages = await getMessagesByLeadId(leadId);
     const qualificationState = await getQualificationState(leadId, lead.stage);
 
-    return NextResponse.json({
+    const chatResponse = NextResponse.json({
       lead,
       messages: toChatMessages(messages),
       qualificationState,
     });
+
+    const token = await signInvestorSession({
+      leadId: lead.id,
+      email: lead.email,
+      role: 'investor',
+    });
+    setInvestorSessionCookie(chatResponse, token);
+
+    return chatResponse;
   } catch (error) {
     console.error('Error fetching chat:', error);
     return NextResponse.json(
@@ -101,7 +114,7 @@ export async function POST(
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
       new URL(request.url).origin;
 
-    const response = await orchestrator.processMessage(lead, message, {
+    const orchestratorResponse = await orchestrator.processMessage(lead, message, {
       appUrl,
     });
 
@@ -137,11 +150,20 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({
-      messages: toChatMessages(response.agentMessages),
+    const chatResponse = NextResponse.json({
+      messages: toChatMessages(orchestratorResponse.agentMessages),
       stage: nextStage,
       qualificationState,
     });
+
+    const token = await signInvestorSession({
+      leadId: updatedLead.id,
+      email: updatedLead.email,
+      role: 'investor',
+    });
+    setInvestorSessionCookie(chatResponse, token);
+
+    return chatResponse;
   } catch (error) {
     console.error('Error processing message:', error);
     return NextResponse.json(
