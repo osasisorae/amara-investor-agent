@@ -9,6 +9,7 @@ import {
   type CommitmentSelection,
 } from '@/lib/agreement/commitment';
 import { getAgreementMarkdown } from '@/lib/agreement/template';
+import type { LeadPaymentProgress } from '@/lib/payment';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
 
@@ -23,6 +24,7 @@ interface AgreementClientProps {
   lead: AgreementLead;
   agreementMarkdown: string;
   initialCommitment: CommitmentSelection;
+  initialPaymentProgress: LeadPaymentProgress;
 }
 
 function getStageLabel(stage: string): string {
@@ -44,6 +46,7 @@ export default function AgreementClient({
   lead,
   agreementMarkdown,
   initialCommitment,
+  initialPaymentProgress,
 }: AgreementClientProps) {
   const { notify } = useFeedback();
   const [stage, setStage] = useState(lead.stage);
@@ -53,10 +56,23 @@ export default function AgreementClient({
   const [otpSending, setOtpSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [signing, setSigning] = useState(false);
-  const [paymentReference, setPaymentReference] = useState<string | null>(null);
+  const [paymentCheckoutLoading, setPaymentCheckoutLoading] = useState(false);
+  const [paymentReference, setPaymentReference] = useState<string | null>(
+    initialPaymentProgress.paymentReference
+  );
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(
+    initialPaymentProgress.checkoutUrl
+  );
+  const [paymentSubmittedAt, setPaymentSubmittedAt] = useState<number | null>(
+    initialPaymentProgress.submittedAt
+  );
+  const [paymentSubmittedStatus, setPaymentSubmittedStatus] = useState<
+    string | null
+  >(initialPaymentProgress.submittedStatus);
   const [warning, setWarning] = useState<string | null>(null);
 
   const canSign = stage === 'agreement_pending';
+  const hasSubmittedPayment = Boolean(paymentSubmittedAt);
   const commitment = buildCommitmentSelection(slotCount);
   const perSlotCommitmentLabel = buildCommitmentSelection(1).commitmentLabel;
   const agreementPreviewMarkdown = getAgreementMarkdown({
@@ -190,6 +206,7 @@ export default function AgreementClient({
 
       setStage(data.stage || 'agreement_signed');
       setPaymentReference(data.paymentReference || null);
+      setPaymentUrl(data.paymentUrl || null);
       setWarning(data.warning || null);
       setOtpCode('');
       notify({
@@ -209,6 +226,59 @@ export default function AgreementClient({
       });
     } finally {
       setSigning(false);
+    }
+  };
+
+  const openPaymentCheckout = async () => {
+    if (paymentCheckoutLoading || hasSubmittedPayment) {
+      return;
+    }
+
+    if (paymentUrl) {
+      window.location.href = paymentUrl;
+      return;
+    }
+
+    setPaymentCheckoutLoading(true);
+    try {
+      const response = await fetch(`/api/payment/${lead.id}/checkout`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        notify({
+          title: 'Payment checkout unavailable',
+          message: data.error || 'Failed to prepare the payment checkout.',
+          tone: 'error',
+        });
+        return;
+      }
+
+      setStage(data.stage || 'payment_pending');
+      setPaymentReference(data.paymentReference || paymentReference);
+      setPaymentUrl(data.paymentUrl || null);
+      setWarning(data.warning || null);
+
+      if (data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+        return;
+      }
+
+      notify({
+        title: 'Payment checkout ready',
+        message: 'Your secure Flutterwave checkout has been prepared.',
+        tone: 'success',
+      });
+    } catch (error) {
+      console.error('Failed to open payment checkout:', error);
+      notify({
+        title: 'Payment checkout unavailable',
+        message: 'Failed to prepare the payment checkout.',
+        tone: 'error',
+      });
+    } finally {
+      setPaymentCheckoutLoading(false);
     }
   };
 
@@ -418,19 +488,43 @@ export default function AgreementClient({
               Status
             </div>
             <p className="mt-3 text-sm leading-6 text-futurex-muted">
-              {stage === 'payment_pending'
-                ? 'Your agreement is signed and payment instructions have been issued.'
-                : stage === 'agreement_signed'
-                  ? 'Your agreement is signed. Payment instructions still need to be issued manually.'
-                  : stage === 'closed'
-                    ? 'This investment record has been closed.'
-                    : 'This agreement has already been signed.'}
+              {stage === 'payment_pending' && hasSubmittedPayment
+                ? 'Flutterwave has confirmed your payment submission. FutureX is validating settlement before final allocation confirmation.'
+                : stage === 'payment_pending'
+                  ? 'Your agreement is signed and your secure Flutterwave checkout is ready.'
+                  : stage === 'agreement_signed'
+                    ? 'Your agreement is signed. Prepare your Flutterwave checkout to continue.'
+                    : stage === 'closed'
+                      ? 'This investment record has been closed.'
+                      : 'This agreement has already been signed.'}
             </p>
             {paymentReference && (
               <div className="mt-4 rounded-2xl border border-futurex-gold-border bg-futurex-gold-soft px-4 py-3 text-sm text-futurex-gold">
                 Payment reference: <span className="font-semibold">{paymentReference}</span>
               </div>
             )}
+            {!hasSubmittedPayment &&
+            (stage === 'agreement_signed' || stage === 'payment_pending') ? (
+              <button
+                type="button"
+                onClick={openPaymentCheckout}
+                disabled={paymentCheckoutLoading}
+                className="mt-4 w-full rounded-full bg-futurex-gold px-4 py-3 text-sm font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
+              >
+                {paymentCheckoutLoading
+                  ? 'Preparing checkout...'
+                  : paymentUrl
+                    ? 'Continue to Flutterwave checkout'
+                    : 'Prepare Flutterwave checkout'}
+              </button>
+            ) : null}
+            {hasSubmittedPayment ? (
+              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                Payment submitted{paymentSubmittedStatus
+                  ? ` (${paymentSubmittedStatus})`
+                  : ''}. FutureX will close the allocation after internal settlement confirmation.
+              </div>
+            ) : null}
             {warning && (
               <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {warning}

@@ -26,6 +26,9 @@ interface Lead {
   opsSummary?: {
     humanReviewReason?: string | null;
     paymentReference?: string | null;
+    paymentSubmittedAt?: number | null;
+    paymentSubmittedStatus?: string | null;
+    paymentTransactionId?: string | null;
     paymentConfirmedBy?: string | null;
   };
 }
@@ -289,6 +292,9 @@ export default function AdminDashboardClient({
       stage
     );
 
+  const canConfirmPayment = (lead: Lead) =>
+    lead.stage === 'payment_pending' && Boolean(lead.opsSummary?.paymentSubmittedAt);
+
   return (
     <div className="min-h-screen bg-futurex-bg">
       <header className="border-b border-futurex-line">
@@ -425,6 +431,7 @@ export default function AdminDashboardClient({
                         lead.qualificationSummary?.futureInterestNote ||
                         lead.opsSummary?.humanReviewReason ||
                         lead.opsSummary?.paymentReference ||
+                        lead.opsSummary?.paymentSubmittedAt ||
                         lead.opsSummary?.paymentConfirmedBy) && (
                         <div className="mt-3 space-y-2 text-sm">
                           {lead.qualificationSummary?.investorProfile ? (
@@ -489,6 +496,32 @@ export default function AdminDashboardClient({
                               {lead.opsSummary.paymentReference}
                             </div>
                           ) : null}
+                          {lead.stage === 'payment_pending' &&
+                          !lead.opsSummary?.paymentSubmittedAt ? (
+                            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sky-100">
+                              <span className="font-medium">
+                                Checkout status:
+                              </span>{' '}
+                              Flutterwave checkout created. Waiting for the
+                              investor to complete payment.
+                            </div>
+                          ) : null}
+                          {lead.opsSummary?.paymentSubmittedAt ? (
+                            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-100">
+                              <span className="font-medium">
+                                Payment submitted:
+                              </span>{' '}
+                              {new Date(
+                                lead.opsSummary.paymentSubmittedAt * 1000
+                              ).toLocaleString()}
+                              {lead.opsSummary.paymentSubmittedStatus
+                                ? ` (${lead.opsSummary.paymentSubmittedStatus})`
+                                : ''}
+                              {lead.opsSummary.paymentTransactionId
+                                ? ` · TX ${lead.opsSummary.paymentTransactionId}`
+                                : ''}
+                            </div>
+                          ) : null}
                           {lead.opsSummary?.paymentConfirmedBy ? (
                             <p className="text-futurex-muted">
                               <span className="font-medium text-futurex-ink">
@@ -519,10 +552,14 @@ export default function AdminDashboardClient({
                       ) : null}
                       {lead.stage === 'payment_pending' ? (
                         <button
+                          type="button"
                           onClick={() => confirmPayment(lead.id)}
-                          className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
+                          disabled={!canConfirmPayment(lead)}
+                          className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-900/40 disabled:text-indigo-100/60"
                         >
-                          Confirm Payment
+                          {canConfirmPayment(lead)
+                            ? 'Confirm Payment'
+                            : 'Awaiting Payment'}
                         </button>
                       ) : null}
                       {isAgreementStage(lead.stage) ? (

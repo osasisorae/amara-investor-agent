@@ -131,6 +131,7 @@ export async function POST(
     });
 
     let paymentReference: string | undefined;
+    let paymentUrl: string | undefined;
     let paymentWarning: string | undefined;
     let nextStage: 'agreement_signed' | 'payment_pending' = 'agreement_signed';
 
@@ -139,9 +140,13 @@ export async function POST(
         ...lead,
         full_name: fullName,
         stage: 'agreement_signed',
+      }, {
+        appBaseUrl: request.nextUrl.origin,
       });
       await applyOrchestratorStageTransition(leadId, 'payment_pending');
       paymentReference = paymentResult.paymentReference;
+      paymentUrl = paymentResult.checkoutUrl;
+      paymentWarning = paymentResult.warning;
       nextStage = 'payment_pending';
     } catch (paymentError) {
       paymentWarning =
@@ -155,7 +160,7 @@ export async function POST(
       role: 'agent',
       content:
         nextStage === 'payment_pending'
-          ? `Your agreement has been signed successfully. Payment instructions have been emailed to you${
+          ? `Your agreement has been signed successfully. Your Flutterwave checkout is ready${
               paymentReference ? ` with reference ${paymentReference}` : ''
             }.`
           : 'Your agreement has been signed successfully. A FutureX team member will share payment instructions with you directly.',
@@ -165,6 +170,7 @@ export async function POST(
       success: true,
       stage: nextStage,
       paymentReference,
+      paymentUrl,
       warning: paymentWarning,
     });
   } catch (error) {

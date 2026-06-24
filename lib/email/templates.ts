@@ -462,32 +462,31 @@ ${TEXT_EMAIL_FOOTER}
 export function getPaymentInstructionsEmailTemplate(params: {
   investorName: string;
   paymentReference: string;
-  bankDetails: string;
   commitmentLabel: string;
-  deadlineLabel: string;
+  checkoutUrl: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'Your FutureX payment instructions';
+  const subject = 'Your FutureX payment checkout is ready';
 
   const html = renderEmailLayout(
     `
       <h2>Thank you, ${params.investorName}.</h2>
 
-      <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>. Your payment instructions are now ready.</p>
+      <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>. Your secure payment checkout is now ready.</p>
 
       <div class="alert">
         <strong>Payment reference:</strong> ${params.paymentReference}<br/>
-        <strong>Recorded commitment:</strong> ${params.commitmentLabel}<br/>
-        <strong>Deadline:</strong> ${params.deadlineLabel}
+        <strong>Recorded commitment:</strong> ${params.commitmentLabel}
       </div>
 
-      <p>Please include the payment reference exactly as written in your transfer narration.</p>
-
-      <p><strong>Bank details</strong></p>
-      ${renderPlainTextParagraphs(params.bankDetails)}
+      <p>Use the secure checkout below to complete your subscription payment with Flutterwave.</p>
+      <p><a href="${params.checkoutUrl}" class="button">Open secure checkout</a></p>
+      <p>If the button does not work, copy and paste this link into your browser:</p>
+      <p>${params.checkoutUrl}</p>
 
       <p>What happens next:</p>
       <ul>
-        <li>Send the transfer using the payment reference above</li>
+        <li>Open the secure Flutterwave checkout</li>
+        <li>Complete the payment using an available method</li>
         <li>Our team confirms receipt and allocation</li>
         <li>You receive the final onboarding confirmation and next-step updates</li>
       </ul>
@@ -500,19 +499,17 @@ export function getPaymentInstructionsEmailTemplate(params: {
   const text = `
 Thank you, ${params.investorName}.
 
-Your agreement has been signed for the ${SPV_NAME}. Your payment instructions are now ready.
+Your agreement has been signed for the ${SPV_NAME}. Your secure payment checkout is now ready.
 
 Payment reference: ${params.paymentReference}
 Recorded commitment: ${params.commitmentLabel}
-Deadline: ${params.deadlineLabel}
 
-Please include the payment reference exactly as written in your transfer narration.
-
-Bank details:
-${params.bankDetails}
+Open secure checkout:
+${params.checkoutUrl}
 
 What happens next:
-- Send the transfer using the payment reference above
+- Open the secure Flutterwave checkout
+- Complete the payment using an available method
 - Our team confirms receipt and allocation
 - You receive the final onboarding confirmation and next-step updates
 

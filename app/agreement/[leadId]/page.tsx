@@ -8,7 +8,10 @@ import {
   getLeadById,
   markAgreementViewed,
 } from '@/lib/db/leads';
-import { getLeadCommitmentSelection } from '@/lib/payment';
+import {
+  getLeadCommitmentSelection,
+  getLeadPaymentProgress,
+} from '@/lib/payment';
 
 export default async function AgreementPage({
   params,
@@ -38,6 +41,7 @@ export default async function AgreementPage({
   });
 
   const commitment = await getLeadCommitmentSelection(params.leadId);
+  const paymentProgress = await getLeadPaymentProgress(params.leadId);
   const agreementMarkdown = getAgreementMarkdown({
     lead,
     commitmentLabel: commitment.commitmentLabel,
@@ -78,6 +82,7 @@ export default async function AgreementPage({
           }}
           agreementMarkdown={agreementMarkdown}
           initialCommitment={commitment}
+          initialPaymentProgress={paymentProgress}
         />
       </main>
     </div>
