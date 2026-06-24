@@ -182,7 +182,6 @@ export async function GET(request: NextRequest) {
          'future_interest_noted',
          'human_review_requested',
          'payment_instructions_sent',
-         'payment_submitted',
          'payment_received'
        )
        ORDER BY created_at DESC`
@@ -220,7 +219,6 @@ export async function GET(request: NextRequest) {
     const latestFutureInterestByLead = new Map<string, AuditEventRow>();
     const latestHumanReviewByLead = new Map<string, AuditEventRow>();
     const latestPaymentInstructionsByLead = new Map<string, AuditEventRow>();
-    const latestPaymentSubmittedByLead = new Map<string, AuditEventRow>();
     const latestPaymentReceivedByLead = new Map<string, AuditEventRow>();
     const messagesByLead = new Map<string, MessageRow[]>();
 
@@ -254,13 +252,6 @@ export async function GET(request: NextRequest) {
       }
 
       if (
-        event.event_type === 'payment_submitted' &&
-        !latestPaymentSubmittedByLead.has(event.lead_id)
-      ) {
-        latestPaymentSubmittedByLead.set(event.lead_id, event);
-      }
-
-      if (
         event.event_type === 'payment_received' &&
         !latestPaymentReceivedByLead.has(event.lead_id)
       ) {
@@ -282,16 +273,12 @@ export async function GET(request: NextRequest) {
       const futureInterestEvent = latestFutureInterestByLead.get(lead.id);
       const humanReviewEvent = latestHumanReviewByLead.get(lead.id);
       const paymentInstructionsEvent = latestPaymentInstructionsByLead.get(lead.id);
-      const paymentSubmittedEvent = latestPaymentSubmittedByLead.get(lead.id);
       const paymentReceivedEvent = latestPaymentReceivedByLead.get(lead.id);
       const failedMetadata = parseMetadata(failedEvent?.metadata);
       const futureInterestMetadata = parseMetadata(futureInterestEvent?.metadata);
       const humanReviewMetadata = parseMetadata(humanReviewEvent?.metadata);
       const paymentInstructionsMetadata = parseMetadata(
         paymentInstructionsEvent?.metadata
-      );
-      const paymentSubmittedMetadata = parseMetadata(
-        paymentSubmittedEvent?.metadata
       );
       const paymentReceivedMetadata = parseMetadata(paymentReceivedEvent?.metadata);
       const leadMessages = messagesByLead.get(lead.id) || [];
@@ -366,17 +353,6 @@ export async function GET(request: NextRequest) {
             paymentInstructionsMetadata?.payment_reference &&
             typeof paymentInstructionsMetadata.payment_reference === 'string'
               ? paymentInstructionsMetadata.payment_reference
-              : null,
-          paymentSubmittedAt: paymentSubmittedEvent?.created_at || null,
-          paymentSubmittedStatus:
-            paymentSubmittedMetadata?.status &&
-            typeof paymentSubmittedMetadata.status === 'string'
-              ? paymentSubmittedMetadata.status
-              : null,
-          paymentTransactionId:
-            paymentSubmittedMetadata?.transaction_id &&
-            typeof paymentSubmittedMetadata.transaction_id === 'string'
-              ? paymentSubmittedMetadata.transaction_id
               : null,
           paymentConfirmedBy:
             paymentReceivedMetadata?.confirmed_by &&

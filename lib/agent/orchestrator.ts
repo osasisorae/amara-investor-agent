@@ -97,7 +97,6 @@ const AUDIT_EVENT_TYPES: AuditEventType[] = [
   'agreement_signed',
   'otp_sent',
   'payment_instructions_sent',
-  'payment_submitted',
   'payment_received',
 ];
 

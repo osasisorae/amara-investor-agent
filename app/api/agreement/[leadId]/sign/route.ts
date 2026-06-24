@@ -17,8 +17,10 @@ import { saveMessage } from '@/lib/db/messages';
 import { consumeOtpCode } from '@/lib/db/otp';
 import {
   getLeadCommitmentSelection,
-  triggerPaymentInstructions,
+  getPaymentReference,
+  sendPaymentInstructions,
 } from '@/lib/payment';
+import { PAYMENT_DETAILS } from '@/lib/payment-details';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
 
@@ -130,24 +132,16 @@ export async function POST(
       userAgent: request.headers.get('user-agent') || undefined,
     });
 
-    let paymentReference: string | undefined;
-    let paymentUrl: string | undefined;
+    const paymentReference = getPaymentReference(leadId);
     let paymentWarning: string | undefined;
-    let nextStage: 'agreement_signed' | 'payment_pending' = 'agreement_signed';
 
     try {
-      const paymentResult = await triggerPaymentInstructions({
+      const paymentResult = await sendPaymentInstructions({
         ...lead,
         full_name: fullName,
         stage: 'agreement_signed',
-      }, {
-        appBaseUrl: request.nextUrl.origin,
       });
-      await applyOrchestratorStageTransition(leadId, 'payment_pending');
-      paymentReference = paymentResult.paymentReference;
-      paymentUrl = paymentResult.checkoutUrl;
       paymentWarning = paymentResult.warning;
-      nextStage = 'payment_pending';
     } catch (paymentError) {
       paymentWarning =
         paymentError instanceof Error
@@ -155,22 +149,35 @@ export async function POST(
           : 'Payment instructions could not be sent automatically.';
     }
 
+    await applyOrchestratorStageTransition(leadId, 'payment_pending');
+    const paymentMessageCreatedAt = Math.floor(Date.now() / 1000);
+
     await saveMessage({
       leadId,
       role: 'agent',
-      content:
-        nextStage === 'payment_pending'
-          ? `Your agreement has been signed successfully. Your Flutterwave checkout is ready${
-              paymentReference ? ` with reference ${paymentReference}` : ''
-            }.`
-          : 'Your agreement has been signed successfully. A FutureX team member will share payment instructions with you directly.',
+      createdAt: paymentMessageCreatedAt,
+      content: `Your agreement has been signed and verified. Your payment reference is ${paymentReference}. Payment instructions have been sent to your email — please review them to complete your investment.`,
+    });
+    await saveMessage({
+      leadId,
+      role: 'agent',
+      createdAt: paymentMessageCreatedAt + 1,
+      content: '',
+      metadata: {
+        component: 'payment_instructions',
+        data: {
+          paymentReference,
+          commitmentAmountNgn: commitmentSelection.commitmentAmountNgn,
+          slotCount: commitmentSelection.slotCount,
+          paymentDetails: PAYMENT_DETAILS,
+        },
+      },
     });
 
     return NextResponse.json({
       success: true,
-      stage: nextStage,
+      stage: 'payment_pending',
       paymentReference,
-      paymentUrl,
       warning: paymentWarning,
     });
   } catch (error) {

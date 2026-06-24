@@ -19,6 +19,7 @@ import type {
   KycSubmittedComponentData,
   KycUploadComponentData,
   OwnershipCardComponentData,
+  PaymentInstructionsComponentData,
   PipelineStatusComponentData,
   ReturnsTableComponentData,
   RevenueChartComponentData,
@@ -31,6 +32,7 @@ import { DealBriefCard } from '@/components/deal-room/DealBriefCard';
 import { ExitCard } from '@/components/deal-room/ExitCard';
 import { GuidedQuestionChips } from '@/components/deal-room/GuidedQuestionChips';
 import { OwnershipCard } from '@/components/deal-room/OwnershipCard';
+import { PaymentInstructionsCard } from '@/components/deal-room/PaymentInstructionsCard';
 import { ReturnsTable } from '@/components/deal-room/ReturnsTable';
 import { RevenueChart } from '@/components/deal-room/RevenueChart';
 import { RiskTable } from '@/components/deal-room/RiskTable';
@@ -703,6 +705,12 @@ export default function ChatPage() {
           message.metadata?.data as DocumentListComponentData,
           submitMessage,
           sending || disableInput
+        );
+      case 'payment_instructions':
+        return (
+          <PaymentInstructionsCard
+            data={message.metadata?.data as PaymentInstructionsComponentData}
+          />
         );
       case 'pipeline_status':
         return renderPipelineStatus(

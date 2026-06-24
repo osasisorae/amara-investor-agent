@@ -43,7 +43,7 @@ Amara is **not a chatbot**. She is an autonomous workflow agent that:
 | Persistent Memory | Turso (libSQL) — conversation state, lead status, audit trail |
 | Email | Resend |
 | File Storage | Cloudflare R2 (KYC documents) |
-| Payment Processing | Flutterwave |
+| Payment Operations | Grey Finance manual wire instructions + admin confirmation |
 | Backend Deployment | Vercel |
 | Auth | NextAuth.js |
 
@@ -146,12 +146,17 @@ See `.env.example` for all required variables:
 - `R2_ENDPOINT` - R2 endpoint URL
 - Or: `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token (alternative)
 
-### Payment Processing
-- `FLUTTERWAVE_PK` - Flutterwave public key (TEST or LIVE)
-- `FLUTTERWAVE_SK` - Flutterwave secret key (keep secure)
-- `FLUTTERWAVE_EK` - Flutterwave encryption key
-- Get your keys from: https://dashboard.flutterwave.com/dashboard/settings/apis
-- ⚠️ **Important**: Use TEST keys for development, switch to LIVE keys for production
+### Payment Details
+- `FUTUREX_NGN_ACCOUNT_NUMBER` - Grey/NGN receiving account number
+- `FUTUREX_NGN_SORT_CODE` - NGN bank sort code
+- `FUTUREX_USD_ACCOUNT_NUMBER` - USD receiving account number
+- `FUTUREX_USD_ROUTING_NUMBER` - USD routing number
+- `FUTUREX_USD_SWIFT` - USD SWIFT code
+- `FUTUREX_USDC_ETH_ADDRESS` - USDC on Ethereum wallet
+- `FUTUREX_USDC_SOL_ADDRESS` - USDC on Solana wallet
+- `FUTUREX_USDC_BNB_ADDRESS` - USDC on BNB Chain wallet
+- `FUTUREX_USDT_BNB_ADDRESS` - USDT on BNB Chain wallet
+- `FUTUREX_USDT_TRX_ADDRESS` - USDT on TRON wallet
 
 ### Authentication
 - `NEXTAUTH_SECRET` - NextAuth session secret (generate with `openssl rand -base64 32`)

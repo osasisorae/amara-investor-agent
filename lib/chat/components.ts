@@ -29,6 +29,7 @@ export type AgentMessageType =
   | 'text'
   | 'deal_card'
   | 'document_list'
+  | 'payment_instructions'
   | 'pipeline_status'
   | 'kyc_prompt'
   | 'kyc_consent'
@@ -67,6 +68,36 @@ export interface DocumentListComponentData {
   title: string;
   description: string;
   documents: DocumentCardData[];
+}
+
+export interface PaymentInstructionsDetailsData {
+  ngn: {
+    bank: string;
+    accountName: string;
+    accountNumber: string;
+    sortCode: string;
+  };
+  usd: {
+    bank: string;
+    accountName: string;
+    accountNumber: string;
+    routingNumber: string;
+    swiftCode: string;
+  };
+  crypto: {
+    usdc_eth: string;
+    usdc_sol: string;
+    usdc_bnb: string;
+    usdt_bnb: string;
+    usdt_trx: string;
+  };
+}
+
+export interface PaymentInstructionsComponentData {
+  paymentReference: string;
+  commitmentAmountNgn: number;
+  slotCount: number;
+  paymentDetails: PaymentInstructionsDetailsData;
 }
 
 export interface PipelineStageData {
@@ -264,6 +295,7 @@ export interface AgreementReadyComponentData {
 export interface UIComponentDataMap {
   deal_card: DealCardComponentData;
   document_list: DocumentListComponentData;
+  payment_instructions: PaymentInstructionsComponentData;
   pipeline_status: PipelineStatusComponentData;
   kyc_prompt: KycPromptComponentData;
   kyc_consent: KycConsentComponentData;
@@ -307,6 +339,7 @@ export function isUIComponentType(value: string): value is UIComponentType {
   return (
     value === 'deal_card' ||
     value === 'document_list' ||
+    value === 'payment_instructions' ||
     value === 'pipeline_status' ||
     value === 'kyc_prompt' ||
     value === 'kyc_consent' ||
@@ -474,6 +507,34 @@ export function buildDefaultComponentData(
       return buildDealCardData();
     case 'document_list':
       return buildDocumentListData();
+    case 'payment_instructions':
+      return {
+        paymentReference: '',
+        commitmentAmountNgn: 0,
+        slotCount: 1,
+        paymentDetails: {
+          ngn: {
+            bank: 'Zenith Bank',
+            accountName: 'FutureX Nexus Development Limited',
+            accountNumber: '',
+            sortCode: '',
+          },
+          usd: {
+            bank: 'Grey Finance',
+            accountName: 'FutureX Nexus Development Limited',
+            accountNumber: '',
+            routingNumber: '',
+            swiftCode: '',
+          },
+          crypto: {
+            usdc_eth: '',
+            usdc_sol: '',
+            usdc_bnb: '',
+            usdt_bnb: '',
+            usdt_trx: '',
+          },
+        },
+      };
     case 'pipeline_status':
       return buildPipelineStatusData(currentStage);
     case 'kyc_prompt':
@@ -529,6 +590,8 @@ export function getComponentFallbackText(
       return '[ui:deal_card] Deal room overview';
     case 'document_list':
       return '[ui:document_list] Investor documents';
+    case 'payment_instructions':
+      return '[ui:payment_instructions] Manual wire instructions';
     case 'pipeline_status':
       return '[ui:pipeline_status] Pipeline progress';
     case 'kyc_prompt':

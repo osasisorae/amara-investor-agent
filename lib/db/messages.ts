@@ -15,9 +15,10 @@ export async function saveMessage(data: {
   role: 'agent' | 'investor';
   content: string;
   metadata?: Record<string, unknown>;
+  createdAt?: number;
 }): Promise<Message> {
   const id = nanoid();
-  const now = Math.floor(Date.now() / 1000);
+  const now = data.createdAt ?? Math.floor(Date.now() / 1000);
   const metadataJson = data.metadata ? JSON.stringify(data.metadata) : null;
 
   await execute(
