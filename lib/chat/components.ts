@@ -30,6 +30,7 @@ export type AgentMessageType =
   | 'deal_card'
   | 'document_list'
   | 'payment_instructions'
+  | 'payment_method_selector'
   | 'pipeline_status'
   | 'kyc_prompt'
   | 'kyc_consent'
@@ -98,6 +99,12 @@ export interface PaymentInstructionsComponentData {
   commitmentAmountNgn: number;
   slotCount: number;
   paymentDetails: PaymentInstructionsDetailsData;
+}
+
+export interface PaymentMethodSelectorComponentData {
+  paymentReference: string;
+  commitmentAmountNgn: number;
+  slotCount: number;
 }
 
 export interface PipelineStageData {
@@ -296,6 +303,7 @@ export interface UIComponentDataMap {
   deal_card: DealCardComponentData;
   document_list: DocumentListComponentData;
   payment_instructions: PaymentInstructionsComponentData;
+  payment_method_selector: PaymentMethodSelectorComponentData;
   pipeline_status: PipelineStatusComponentData;
   kyc_prompt: KycPromptComponentData;
   kyc_consent: KycConsentComponentData;
@@ -340,6 +348,7 @@ export function isUIComponentType(value: string): value is UIComponentType {
     value === 'deal_card' ||
     value === 'document_list' ||
     value === 'payment_instructions' ||
+    value === 'payment_method_selector' ||
     value === 'pipeline_status' ||
     value === 'kyc_prompt' ||
     value === 'kyc_consent' ||
@@ -535,6 +544,12 @@ export function buildDefaultComponentData(
           },
         },
       };
+    case 'payment_method_selector':
+      return {
+        paymentReference: '',
+        commitmentAmountNgn: 0,
+        slotCount: 1,
+      };
     case 'pipeline_status':
       return buildPipelineStatusData(currentStage);
     case 'kyc_prompt':
@@ -592,6 +607,8 @@ export function getComponentFallbackText(
       return '[ui:document_list] Investor documents';
     case 'payment_instructions':
       return '[ui:payment_instructions] Manual wire instructions';
+    case 'payment_method_selector':
+      return '[ui:payment_method_selector] Choose a payment method';
     case 'pipeline_status':
       return '[ui:pipeline_status] Pipeline progress';
     case 'kyc_prompt':

@@ -8,10 +8,7 @@ import {
   getLeadById,
   markAgreementViewed,
 } from '@/lib/db/leads';
-import {
-  getLeadCommitmentSelection,
-  getPaymentReference,
-} from '@/lib/payment';
+import { getLeadCommitmentSelection } from '@/lib/payment';
 
 export default async function AgreementPage({
   params,
@@ -41,10 +38,6 @@ export default async function AgreementPage({
   });
 
   const commitment = await getLeadCommitmentSelection(params.leadId);
-  const initialPaymentReference =
-    lead.stage === 'agreement_pending'
-      ? null
-      : getPaymentReference(params.leadId);
   const agreementMarkdown = getAgreementMarkdown({
     lead,
     commitmentLabel: commitment.commitmentLabel,
@@ -85,7 +78,6 @@ export default async function AgreementPage({
           }}
           agreementMarkdown={agreementMarkdown}
           initialCommitment={commitment}
-          initialPaymentReference={initialPaymentReference}
         />
       </main>
     </div>

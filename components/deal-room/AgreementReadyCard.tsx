@@ -31,7 +31,7 @@ export function AgreementReadyCard({ data }: AgreementReadyCardProps) {
             type="button"
             onClick={() => {
               if (agreementUrl) {
-                window.location.href = agreementUrl;
+                window.open(agreementUrl, '_blank', 'noopener,noreferrer');
               }
             }}
             disabled={!agreementUrl}

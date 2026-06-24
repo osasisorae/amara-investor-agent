@@ -19,6 +19,7 @@ import type {
   KycSubmittedComponentData,
   KycUploadComponentData,
   OwnershipCardComponentData,
+  PaymentMethodSelectorComponentData,
   PaymentInstructionsComponentData,
   PipelineStatusComponentData,
   ReturnsTableComponentData,
@@ -32,6 +33,7 @@ import { DealBriefCard } from '@/components/deal-room/DealBriefCard';
 import { ExitCard } from '@/components/deal-room/ExitCard';
 import { GuidedQuestionChips } from '@/components/deal-room/GuidedQuestionChips';
 import { OwnershipCard } from '@/components/deal-room/OwnershipCard';
+import { PaymentMethodSelectorCard } from '@/components/deal-room/PaymentMethodSelectorCard';
 import { PaymentInstructionsCard } from '@/components/deal-room/PaymentInstructionsCard';
 import { ReturnsTable } from '@/components/deal-room/ReturnsTable';
 import { RevenueChart } from '@/components/deal-room/RevenueChart';
@@ -315,7 +317,12 @@ export default function ChatPage() {
   }, [loading, messages]);
 
   useEffect(() => {
-    if (!lead || lead.stage !== 'pending_human_review') {
+    if (
+      !lead ||
+      !['pending_human_review', 'agreement_pending', 'payment_pending'].includes(
+        lead.stage
+      )
+    ) {
       return;
     }
 
@@ -387,6 +394,8 @@ export default function ChatPage() {
     const intervalId = window.setInterval(() => {
       void pollMessages();
     }, 8000);
+
+    void pollMessages();
 
     return () => {
       cancelled = true;
@@ -710,6 +719,13 @@ export default function ChatPage() {
         return (
           <PaymentInstructionsCard
             data={message.metadata?.data as PaymentInstructionsComponentData}
+          />
+        );
+      case 'payment_method_selector':
+        return (
+          <PaymentMethodSelectorCard
+            leadId={leadId}
+            data={message.metadata?.data as PaymentMethodSelectorComponentData}
           />
         );
       case 'pipeline_status':

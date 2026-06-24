@@ -23,7 +23,6 @@ interface AgreementClientProps {
   lead: AgreementLead;
   agreementMarkdown: string;
   initialCommitment: CommitmentSelection;
-  initialPaymentReference: string | null;
 }
 
 function getStageLabel(stage: string): string {
@@ -45,7 +44,6 @@ export default function AgreementClient({
   lead,
   agreementMarkdown,
   initialCommitment,
-  initialPaymentReference,
 }: AgreementClientProps) {
   const { notify } = useFeedback();
   const [stage, setStage] = useState(lead.stage);
@@ -55,9 +53,6 @@ export default function AgreementClient({
   const [otpSending, setOtpSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [signing, setSigning] = useState(false);
-  const [paymentReference, setPaymentReference] = useState<string | null>(
-    initialPaymentReference
-  );
   const [warning, setWarning] = useState<string | null>(null);
 
   const canSign = stage === 'agreement_pending';
@@ -193,12 +188,12 @@ export default function AgreementClient({
       }
 
       setStage(data.stage || 'payment_pending');
-      setPaymentReference(data.paymentReference || paymentReference);
       setWarning(data.warning || null);
       setOtpCode('');
       notify({
         title: 'Agreement signed',
-        message: 'Agreement signed. Check your email for payment instructions.',
+        message:
+          'Agreement signed. You can close this tab and return to your Amara conversation.',
         tone: 'success',
       });
     } catch (error) {
@@ -413,28 +408,20 @@ export default function AgreementClient({
           </div>
         </div>
 
-        {(stage !== 'agreement_pending' || paymentReference || warning) && (
+        {(stage !== 'agreement_pending' || warning) && (
           <div className="rounded-[24px] border border-futurex-line bg-futurex-surface p-5">
             <div className="text-xs uppercase tracking-[0.18em] text-futurex-gold">
               Status
             </div>
             <p className="mt-3 text-sm leading-6 text-futurex-muted">
               {stage === 'payment_pending'
-                ? 'Agreement signed. Check your email for payment instructions.'
+                ? 'Agreement signed. You can close this tab and return to your Amara conversation.'
                 : stage === 'closed'
                   ? 'Your agreement has been signed and your payment has been confirmed.'
                   : stage === 'agreement_signed'
                     ? 'Your agreement has been signed.'
                     : 'This agreement has already been signed.'}
             </p>
-            {paymentReference && (
-              <div className="mt-4 rounded-2xl border border-futurex-gold-border bg-futurex-gold-soft px-4 py-3 text-sm text-futurex-gold">
-                Payment reference: <span className="font-semibold">{paymentReference}</span>
-                <div className="mt-1 text-xs text-futurex-gold/80">
-                  Include this exact reference in your transfer description.
-                </div>
-              </div>
-            )}
             {warning && (
               <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {warning}

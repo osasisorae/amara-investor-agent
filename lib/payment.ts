@@ -1,4 +1,5 @@
 import { SPV_CODE } from '@/lib/agreement/template';
+import { queryOne } from '@/lib/db/client';
 import {
   AGREEMENT_COMMITMENT_AMOUNT_NGN_QUESTION,
   AGREEMENT_SLOT_COUNT_QUESTION,
@@ -14,18 +15,26 @@ import {
 } from '@/lib/db/qualification';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getPaymentInstructionsEmailTemplate } from '@/lib/email/templates';
-import {
-  PAYMENT_DETAILS,
-  type SerializablePaymentDetails,
-} from '@/lib/payment-details';
+import { type PaymentMethod, isPaymentMethod } from '@/lib/payment-methods';
 
 export interface PaymentInstructionResult {
   paymentReference: string;
   commitmentLabel: string;
   commitmentAmountNgn: number;
   slotCount: number;
-  paymentDetails: SerializablePaymentDetails;
   warning?: string;
+}
+
+interface PaymentConfirmationAuditRow {
+  metadata?: string | null;
+  created_at: number;
+}
+
+export interface PaymentConfirmationStatus {
+  confirmed: boolean;
+  method?: PaymentMethod;
+  reference?: string;
+  createdAt?: number;
 }
 
 function parseStoredPositiveInteger(value?: string): number | null {
@@ -96,11 +105,69 @@ export function getPaymentReference(leadId: string): string {
   return `FTX-${SPV_CODE}-${leadId.slice(0, 8).toUpperCase()}`;
 }
 
+function getAppBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+}
+
+function parsePaymentConfirmationMetadata(
+  value?: string | null
+): PaymentConfirmationStatus {
+  if (!value) {
+    return { confirmed: false };
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { confirmed: false };
+    }
+
+    const method = 'method' in parsed ? parsed.method : undefined;
+    const reference = 'reference' in parsed ? parsed.reference : undefined;
+
+    return {
+      confirmed: isPaymentMethod(method) ? true : false,
+      method: isPaymentMethod(method) ? method : undefined,
+      reference: typeof reference === 'string' ? reference : undefined,
+    };
+  } catch {
+    return { confirmed: false };
+  }
+}
+
+export async function getPaymentConfirmationStatus(
+  leadId: string
+): Promise<PaymentConfirmationStatus> {
+  const row = await queryOne<PaymentConfirmationAuditRow>(
+    `SELECT metadata, created_at
+     FROM audit_events
+     WHERE lead_id = ?
+       AND event_type = 'payment_confirmation_sent'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [leadId]
+  );
+
+  if (!row) {
+    return { confirmed: false };
+  }
+
+  const parsed = parsePaymentConfirmationMetadata(row.metadata);
+
+  return {
+    ...parsed,
+    confirmed: parsed.confirmed,
+    createdAt: row.created_at,
+  };
+}
+
 export async function sendPaymentInstructions(
   lead: Lead
 ): Promise<PaymentInstructionResult> {
   const paymentReference = getPaymentReference(lead.id);
   const commitmentSelection = await getLeadCommitmentSelection(lead.id);
+  const chatUrl = `${getAppBaseUrl()}/chat/${lead.id}`;
 
   await logAuditEvent({
     leadId: lead.id,
@@ -119,10 +186,9 @@ export async function sendPaymentInstructions(
   try {
     const emailTemplate = getPaymentInstructionsEmailTemplate({
       investorName: lead.full_name || 'Investor',
+      chatUrl,
       paymentReference,
       commitmentLabel: commitmentSelection.commitmentLabel,
-      commitmentAmountNgn: commitmentSelection.commitmentAmountNgn,
-      slotCount: commitmentSelection.slotCount,
     });
 
     await sendEmail({
@@ -143,7 +209,6 @@ export async function sendPaymentInstructions(
     commitmentLabel: commitmentSelection.commitmentLabel,
     commitmentAmountNgn: commitmentSelection.commitmentAmountNgn,
     slotCount: commitmentSelection.slotCount,
-    paymentDetails: PAYMENT_DETAILS,
     warning,
   };
 }

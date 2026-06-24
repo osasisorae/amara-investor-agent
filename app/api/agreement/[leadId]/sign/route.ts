@@ -20,7 +20,6 @@ import {
   getPaymentReference,
   sendPaymentInstructions,
 } from '@/lib/payment';
-import { PAYMENT_DETAILS } from '@/lib/payment-details';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
 
@@ -156,7 +155,7 @@ export async function POST(
       leadId,
       role: 'agent',
       createdAt: paymentMessageCreatedAt,
-      content: `Your agreement has been signed and verified. Your payment reference is ${paymentReference}. Payment instructions have been sent to your email — please review them to complete your investment.`,
+      content: `Your agreement has been signed and verified. Your payment reference is ${paymentReference}. Choose how you'd like to send your funds below.`,
     });
     await saveMessage({
       leadId,
@@ -164,12 +163,11 @@ export async function POST(
       createdAt: paymentMessageCreatedAt + 1,
       content: '',
       metadata: {
-        component: 'payment_instructions',
+        component: 'payment_method_selector',
         data: {
           paymentReference,
           commitmentAmountNgn: commitmentSelection.commitmentAmountNgn,
           slotCount: commitmentSelection.slotCount,
-          paymentDetails: PAYMENT_DETAILS,
         },
       },
     });

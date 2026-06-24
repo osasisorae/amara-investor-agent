@@ -541,6 +541,8 @@ export default function AdminDashboardClient({
                       {isAgreementStage(lead.stage) ? (
                         <Link
                           href={`/agreement/${lead.id}`}
+                          target="_blank"
+                          rel="noreferrer"
                           className="rounded border border-futurex-line px-4 py-2 text-sm text-futurex-ink hover:border-futurex-gold hover:text-futurex-gold"
                         >
                           View Agreement

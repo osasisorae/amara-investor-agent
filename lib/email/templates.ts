@@ -8,12 +8,6 @@ import {
   SPV_NAME,
   TARGET_RETURN,
 } from '@/lib/agreement/template';
-import {
-  PAYMENT_DETAILS,
-  getApproximateUsdAmount,
-  shouldShowCryptoPaymentOptions,
-} from '@/lib/payment-details';
-import { getUsdTransferNotice } from '@/lib/payment-copy';
 
 const HTML_EMAIL_FOOTER = `
   <p>
@@ -476,67 +470,27 @@ ${TEXT_EMAIL_FOOTER}
 
 export function getPaymentInstructionsEmailTemplate(params: {
   investorName: string;
+  chatUrl: string;
   paymentReference: string;
   commitmentLabel: string;
-  commitmentAmountNgn: number;
-  slotCount: number;
 }): { subject: string; html: string; text: string } {
   const subject = `Your FutureX payment instructions — ${params.paymentReference}`;
-  const showCrypto = shouldShowCryptoPaymentOptions(params.slotCount);
-  const formattedNgnAmount = `₦${params.commitmentAmountNgn.toLocaleString('en-NG')}`;
-  const approximateUsdAmount = getApproximateUsdAmount(params.slotCount);
-  const usdTransferNotice = getUsdTransferNotice(showCrypto);
 
   const html = renderEmailLayout(
     `
       <h2>Thank you, ${params.investorName}.</h2>
 
-      <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>. Please use the payment instructions below to complete your investment.</p>
+      <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>.</p>
+      <p>Your agreement is signed. Use the link below to return to your Amara conversation to complete payment.</p>
 
       <div class="alert">
         <strong>Payment reference:</strong> ${params.paymentReference}<br/>
         <strong>Recorded commitment:</strong> ${params.commitmentLabel}
       </div>
 
-      <p><strong>Nigerian Naira (NGN)</strong></p>
-      <ul>
-        <li>Bank: ${PAYMENT_DETAILS.ngn.bank}</li>
-        <li>Account name: ${PAYMENT_DETAILS.ngn.accountName}</li>
-        <li>Account number: ${PAYMENT_DETAILS.ngn.accountNumber}</li>
-        <li>Sort code: ${PAYMENT_DETAILS.ngn.sortCode}</li>
-        <li>Amount: ${formattedNgnAmount}</li>
-      </ul>
-
-      <p><strong>US Dollars (USD)</strong></p>
-      <ul>
-        <li>Bank: ${PAYMENT_DETAILS.usd.bank}</li>
-        <li>Account name: ${PAYMENT_DETAILS.usd.accountName}</li>
-        <li>Account number: ${PAYMENT_DETAILS.usd.accountNumber}</li>
-        <li>Routing: ${PAYMENT_DETAILS.usd.routingNumber}</li>
-        <li>Approximate amount: ${approximateUsdAmount}</li>
-      </ul>
-
-      <p><strong>Important:</strong> ${usdTransferNotice}</p>
-
-      ${
-        showCrypto
-          ? `
-      <p><strong>Crypto</strong></p>
-      <ul>
-        <li>USDC on Ethereum: ${PAYMENT_DETAILS.crypto.usdc_eth}</li>
-        <li>USDC on Solana: ${PAYMENT_DETAILS.crypto.usdc_sol}</li>
-        <li>USDC on BNB Chain: ${PAYMENT_DETAILS.crypto.usdc_bnb}</li>
-        <li>USDT on BNB Chain: ${PAYMENT_DETAILS.crypto.usdt_bnb}</li>
-        <li>USDT on TRON (TRX): ${PAYMENT_DETAILS.crypto.usdt_trx}</li>
-      </ul>
-
-      <p><strong>Important:</strong> Only send the exact token on the correct network. Sending to a wrong network will result in permanent loss.</p>
-      `
-          : ''
-      }
-
-      <p><strong>What happens next</strong></p>
-      <p>Once you've sent funds, reply here or email <strong>info@investfuturex.com</strong> with your transfer confirmation. FutureX will verify and confirm your allocation within 2 business days.</p>
+      <p>
+        <a class="cta" href="${params.chatUrl}">Return to your conversation →</a>
+      </p>
     `,
     PAYMENT_INSTRUCTIONS_HTML_FOOTER
   );
@@ -544,42 +498,14 @@ export function getPaymentInstructionsEmailTemplate(params: {
   const text = `
 Thank you, ${params.investorName}.
 
-Your agreement has been signed for the ${SPV_NAME}. Please use the payment instructions below to complete your investment.
+Your agreement has been signed for the ${SPV_NAME}.
+Your agreement is signed. Use the link below to return to your Amara conversation to complete payment.
 
 Payment reference: ${params.paymentReference}
 Recorded commitment: ${params.commitmentLabel}
 
-Nigerian Naira (NGN)
-- Bank: ${PAYMENT_DETAILS.ngn.bank}
-- Account name: ${PAYMENT_DETAILS.ngn.accountName}
-- Account number: ${PAYMENT_DETAILS.ngn.accountNumber}
-- Sort code: ${PAYMENT_DETAILS.ngn.sortCode}
-- Amount: ${formattedNgnAmount}
-
-US Dollars (USD)
-- Bank: ${PAYMENT_DETAILS.usd.bank}
-- Account name: ${PAYMENT_DETAILS.usd.accountName}
-- Account number: ${PAYMENT_DETAILS.usd.accountNumber}
-- Routing: ${PAYMENT_DETAILS.usd.routingNumber}
-- Approximate amount: ${approximateUsdAmount}
-
-Important: ${usdTransferNotice}
-
-${
-  showCrypto
-    ? `Crypto
-- USDC on Ethereum: ${PAYMENT_DETAILS.crypto.usdc_eth}
-- USDC on Solana: ${PAYMENT_DETAILS.crypto.usdc_sol}
-- USDC on BNB Chain: ${PAYMENT_DETAILS.crypto.usdc_bnb}
-- USDT on BNB Chain: ${PAYMENT_DETAILS.crypto.usdt_bnb}
-- USDT on TRON (TRX): ${PAYMENT_DETAILS.crypto.usdt_trx}
-
-Important: Only send the exact token on the correct network. Sending to a wrong network will result in permanent loss.
-
-`
-    : ''
-}What happens next:
-Once you've sent funds, reply here or email info@investfuturex.com with your transfer confirmation. FutureX will verify and confirm your allocation within 2 business days.
+Return to your conversation:
+${params.chatUrl}
 
 ${PAYMENT_INSTRUCTIONS_TEXT_FOOTER}
   `;
