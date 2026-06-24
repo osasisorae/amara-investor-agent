@@ -9,6 +9,18 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export async function GET() {
+  return NextResponse.json(
+    { error: 'Method not allowed' },
+    {
+      status: 405,
+      headers: {
+        Allow: 'POST, DELETE',
+      },
+    }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

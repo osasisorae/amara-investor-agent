@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { PaymentMethodSelectorComponentData } from '@/lib/chat/components';
+import {
+  formatCurrencyAmount,
+  formatStablecoinAmount,
+  type GreyInvestorCurrency,
+  type GreySupportedFiatCurrency,
+} from '@/lib/grey/currency';
 import type { SerializablePaymentDetails } from '@/lib/payment-details';
 import { getUsdTransferNotice } from '@/lib/payment-copy';
 import {
@@ -18,6 +24,8 @@ interface PaymentMethodSelectorCardProps {
 interface PaymentConfirmationResponse {
   leadStage: string;
   paymentDetails: SerializablePaymentDetails;
+  investorCurrency: GreyInvestorCurrency;
+  investorLocation: string | null;
   confirmation: {
     confirmed: boolean;
     method?: PaymentMethod;
@@ -35,6 +43,24 @@ interface PaymentConfirmationMutationResponse {
   error?: string;
 }
 
+interface RateResponsePayload {
+  rate: number;
+  fee: number;
+  sourceAmount: number;
+  sourceCurrency: GreySupportedFiatCurrency;
+  destinationAmount: number;
+  destinationCurrency: GreySupportedFiatCurrency;
+  fetchedAt: number;
+}
+
+interface LiveRateState {
+  loading: boolean;
+  localRate: RateResponsePayload | null;
+  usdRate: RateResponsePayload | null;
+  localUnavailable: boolean;
+  usdUnavailable: boolean;
+}
+
 function formatNaira(value: number): string {
   return `₦${value.toLocaleString('en-NG')}`;
 }
@@ -43,26 +69,73 @@ function formatApproximateUsd(slotCount: number): string {
   const total = slotCount * 3300;
 
   if (slotCount <= 1) {
-    return '$3,300 per slot';
+    return '$3,300 USD (approximate)';
   }
 
-  return `$${total.toLocaleString('en-US')} total (about $3,300 per slot)`;
+  return `$${total.toLocaleString('en-US')} USD total (about $3,300 per slot)`;
 }
 
 function getConfirmationAmountLabel(
   selectedMethod: PaymentMethod,
   commitmentAmountNgn: number,
-  slotCount: number
+  slotCount: number,
+  liveRates: LiveRateState
 ): string {
   if (selectedMethod === 'ngn') {
     return formatNaira(commitmentAmountNgn);
   }
 
   if (selectedMethod === 'usd') {
+    if (liveRates.localRate) {
+      return `${formatCurrencyAmount(
+        liveRates.localRate.destinationAmount,
+        liveRates.localRate.destinationCurrency
+      )} ${liveRates.localRate.destinationCurrency}`;
+    }
+
     return formatApproximateUsd(slotCount);
   }
 
+  if (liveRates.usdRate) {
+    return `approximately ${formatStablecoinAmount(
+      liveRates.usdRate.destinationAmount,
+      'USDC'
+    )} or ${formatStablecoinAmount(
+      liveRates.usdRate.destinationAmount,
+      'USDT'
+    )}`;
+  }
+
   return `the stablecoin equivalent of ${formatApproximateUsd(slotCount)}`;
+}
+
+function buildRateLine(
+  quote: RateResponsePayload | null,
+  sourceLabel = 'Grey Finance'
+): string | null {
+  if (!quote || quote.destinationAmount <= 0) {
+    return null;
+  }
+
+  const nairaPerUnit = quote.sourceAmount / quote.destinationAmount;
+
+  if (!Number.isFinite(nairaPerUnit) || nairaPerUnit <= 0) {
+    return null;
+  }
+
+  return `Rate: 1 ${quote.destinationCurrency} = ${formatCurrencyAmount(
+    nairaPerUnit,
+    'NGN'
+  )} · ${sourceLabel}`;
+}
+
+function RateSkeleton() {
+  return (
+    <div className="space-y-2 rounded-2xl border border-futurex-line bg-futurex-bg/40 px-4 py-3 animate-pulse">
+      <div className="h-4 w-32 rounded-full bg-futurex-line/70" />
+      <div className="h-4 w-48 rounded-full bg-futurex-line/60" />
+    </div>
+  );
 }
 
 function InfoRow(props: {
@@ -111,6 +184,15 @@ export function PaymentMethodSelectorCard({
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [showConfirmPrompt, setShowConfirmPrompt] = useState(false);
   const [submittingConfirmation, setSubmittingConfirmation] = useState(false);
+  const [investorCurrency, setInvestorCurrency] =
+    useState<GreyInvestorCurrency>('USD');
+  const [liveRates, setLiveRates] = useState<LiveRateState>({
+    loading: false,
+    localRate: null,
+    usdRate: null,
+    localUnavailable: false,
+    usdUnavailable: false,
+  });
   const [confirmedState, setConfirmedState] = useState<{
     confirmed: boolean;
     method?: PaymentMethod;
@@ -158,6 +240,11 @@ export function PaymentMethodSelectorCard({
         const nextPayload = payload as PaymentConfirmationResponse;
 
         setPaymentDetails(nextPayload.paymentDetails);
+        setInvestorCurrency(nextPayload.investorCurrency || 'USD');
+        setLiveRates((current) => ({
+          ...current,
+          loading: true,
+        }));
         setConfirmedState({
           confirmed: nextPayload.confirmation.confirmed,
           method: nextPayload.confirmation.method,
@@ -185,6 +272,76 @@ export function PaymentMethodSelectorCard({
       cancelled = true;
     };
   }, [leadId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!paymentDetails || data.commitmentAmountNgn <= 0) {
+      return;
+    }
+
+    const fetchRate = async (
+      destinationCurrency: GreyInvestorCurrency
+    ): Promise<RateResponsePayload | null> => {
+      try {
+        const response = await fetch(
+          `/api/rates?source_currency=NGN&source_amount=${data.commitmentAmountNgn}&destination_currency=${destinationCurrency}`,
+          {
+            cache: 'no-store',
+          }
+        );
+        const payload = (await response.json()) as
+          | RateResponsePayload
+          | {
+              error?: string;
+              fallback?: boolean;
+            };
+
+        if (!response.ok) {
+          return null;
+        }
+
+        return payload as RateResponsePayload;
+      } catch (error) {
+        console.error('Failed to fetch Grey rate:', error);
+        return null;
+      }
+    };
+
+    const loadRates = async () => {
+      setLiveRates({
+        loading: true,
+        localRate: null,
+        usdRate: null,
+        localUnavailable: false,
+        usdUnavailable: false,
+      });
+
+      const localRate = await fetchRate(investorCurrency);
+      const usdRate =
+        investorCurrency === 'USD'
+          ? localRate
+          : await fetchRate('USD');
+
+      if (cancelled) {
+        return;
+      }
+
+      setLiveRates({
+        loading: false,
+        localRate,
+        usdRate,
+        localUnavailable: !localRate,
+        usdUnavailable: !usdRate,
+      });
+    };
+
+    void loadRates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.commitmentAmountNgn, investorCurrency, paymentDetails]);
 
   const handleCopy = async (value: string, key: string) => {
     try {
@@ -381,6 +538,19 @@ export function PaymentMethodSelectorCard({
     }
 
     if (selectedMethod === 'usd') {
+      const fiatAmountLabel = liveRates.localRate
+        ? `${formatCurrencyAmount(
+            liveRates.localRate.destinationAmount,
+            liveRates.localRate.destinationCurrency
+          )} ${liveRates.localRate.destinationCurrency}`
+        : formatApproximateUsd(data.slotCount);
+      const fiatAmountRowLabel =
+        liveRates.localRate &&
+        liveRates.localRate.destinationCurrency !== 'USD'
+          ? `Approximate local amount (${liveRates.localRate.destinationCurrency})`
+          : 'Approximate amount';
+      const fiatRateLine = buildRateLine(liveRates.localRate, 'Updated just now');
+
       return (
         <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface p-4">
           <div className="text-xs uppercase tracking-[0.16em] text-futurex-gold">
@@ -418,12 +588,25 @@ export function PaymentMethodSelectorCard({
               copyKey="usd_routing"
             />
             <InfoRow
-              label="Approximate amount"
-              value={formatApproximateUsd(data.slotCount)}
+              label={fiatAmountRowLabel}
+              value={fiatAmountLabel}
               copied={false}
               onCopy={handleCopy}
               copyKey="usd_amount"
             />
+          </div>
+          <div className="mt-4 space-y-3">
+            {liveRates.loading ? (
+              <RateSkeleton />
+            ) : fiatRateLine ? (
+              <div className="rounded-2xl border border-futurex-line bg-futurex-bg/40 px-4 py-3 text-sm leading-6 text-futurex-muted">
+                {fiatRateLine}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-futurex-line bg-futurex-bg/40 px-4 py-3 text-sm leading-6 text-futurex-muted">
+                Rate unavailable — use approximate.
+              </div>
+            )}
           </div>
           <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
             {usdTransferNotice}
@@ -432,10 +615,49 @@ export function PaymentMethodSelectorCard({
       );
     }
 
+    const cryptoRateLine = buildRateLine(
+      liveRates.usdRate,
+      'Fetched from Grey Finance'
+    );
+
     return (
       <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface p-4">
         <div className="text-xs uppercase tracking-[0.16em] text-futurex-gold">
           Crypto (USDC/USDT)
+        </div>
+        <div className="mt-3 space-y-3">
+          {liveRates.loading ? (
+            <RateSkeleton />
+          ) : liveRates.usdRate ? (
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm leading-6 text-emerald-100">
+              <div>
+                Send approximately{' '}
+                <span className="font-semibold text-emerald-50">
+                  {formatStablecoinAmount(
+                    liveRates.usdRate.destinationAmount,
+                    'USDC'
+                  )}
+                </span>{' '}
+                or{' '}
+                <span className="font-semibold text-emerald-50">
+                  {formatStablecoinAmount(
+                    liveRates.usdRate.destinationAmount,
+                    'USDT'
+                  )}
+                </span>
+                .
+              </div>
+              {cryptoRateLine ? (
+                <div className="mt-2 text-xs text-emerald-100/80">
+                  {cryptoRateLine}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-futurex-line bg-futurex-bg/40 px-4 py-3 text-sm leading-6 text-futurex-muted">
+              Contact FutureX for exact USDC/USDT amount.
+            </div>
+          )}
         </div>
         <div className="mt-3 space-y-3">
           <InfoRow
@@ -541,7 +763,8 @@ export function PaymentMethodSelectorCard({
                       {getConfirmationAmountLabel(
                         selectedMethod,
                         data.commitmentAmountNgn,
-                        data.slotCount
+                        data.slotCount,
+                        liveRates
                       )}
                     </span>{' '}
                     to FutureX using{' '}

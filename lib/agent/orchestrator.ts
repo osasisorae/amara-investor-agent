@@ -56,10 +56,18 @@ import {
   detectFutureInterestRequest,
   getDisqualificationReason,
   getNextQualificationQuestion,
+  MINIMUM_TICKET_NGN,
   QUALIFICATION_SEQUENCE,
   type QualificationAssessment,
   type QualificationQuestion,
 } from './qualification';
+import {
+  detectInvestorCurrencyFromLocation,
+  formatCurrencyAmount,
+  isGreyInvestorCurrency,
+  type GreyInvestorCurrency,
+} from '@/lib/grey/currency';
+import { getGreyRate } from '@/lib/grey/rates';
 
 const ADMIN_ALERT_EMAIL =
   process.env.ADMIN_ALERT_EMAIL || 'osasisorae@gmail.com';
@@ -175,6 +183,25 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
           query: { type: 'string' },
         },
         required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_fx_rate',
+      description:
+        'Get the current Grey Finance exchange rate so Amara can explain the local-currency equivalent of the FutureX minimum ticket.',
+      parameters: {
+        type: 'object',
+        properties: {
+          investor_currency: {
+            type: 'string',
+            description:
+              'The investor currency to convert NGN into, such as USD, GBP, EUR, CAD, or AUD.',
+          },
+        },
+        required: ['investor_currency'],
       },
     },
   },
@@ -337,6 +364,8 @@ function normalizeOrigin(appUrl?: string): string {
 
 function getAllowedToolNamesForStage(stage: LeadStage): string[] {
   switch (stage) {
+    case 'qualifying':
+      return ['get_fx_rate'];
     case 'deal_room':
       return [
         'search_knowledge_base',
@@ -363,6 +392,17 @@ function getAllowedToolNamesForStage(stage: LeadStage): string[] {
 }
 
 function buildToolPrompt(stage: LeadStage): string {
+  if (stage === 'qualifying') {
+    return `${getSystemPromptForStage('qualifying')}
+
+Operational rules:
+- After the investor tells you where they are based, call \`get_fx_rate\` with their likely local currency before asking about the ₦5M minimum ticket.
+- If the tool returns a live quote, include it naturally in the ticket-size question.
+- If the tool returns an error or unavailable result, fall back to saying ₦5M is about $3,300 USD without mentioning any API.
+- Ask one short question at a time.
+`;
+  }
+
   if (stage === 'deal_room') {
     return `${getSystemPromptForStage('deal_room')}
 
@@ -608,7 +648,7 @@ export class AgentOrchestrator {
     return {
       emissions: [
         this.emitTextMessage(
-          this.buildQualificationGuidanceMessage(
+          await this.buildQualificationGuidanceMessage(
             message,
             currentAssessment,
             nextQuestion
@@ -1249,6 +1289,28 @@ export class AgentOrchestrator {
         };
       }
 
+      case 'get_fx_rate': {
+        const investorCurrency = this.requireString(args, 'investor_currency');
+
+        if (!isGreyInvestorCurrency(investorCurrency)) {
+          return {
+            content: JSON.stringify({
+              error: 'unsupported_currency',
+            }),
+          };
+        }
+
+        const result = await getGreyRate({
+          sourceAmount: MINIMUM_TICKET_NGN,
+          sourceCurrency: 'NGN',
+          destinationCurrency: investorCurrency,
+        });
+
+        return {
+          content: JSON.stringify(result ?? { error: 'unavailable' }),
+        };
+      }
+
       case 'flag_for_human_review': {
         const reason = this.requireString(args, 'reason');
         return this.flagLeadForHumanReview(lead, reason, appUrl);
@@ -1556,11 +1618,11 @@ export class AgentOrchestrator {
     return null;
   }
 
-  private buildQualificationGuidanceMessage(
+  private async buildQualificationGuidanceMessage(
     message: string,
     assessment: QualificationAssessment | null,
     nextQuestion: QualificationQuestion | null
-  ): string {
+  ): Promise<string> {
     if (assessment?.matched && assessment.passed && nextQuestion) {
       return this.buildNextQualificationQuestion(assessment, nextQuestion);
     }
@@ -1585,17 +1647,22 @@ export class AgentOrchestrator {
     };
   }
 
-  private buildNextQualificationQuestion(
+  private async buildNextQualificationQuestion(
     assessment: QualificationAssessment,
     nextQuestion: QualificationQuestion
-  ): string {
+  ): Promise<string> {
     switch (nextQuestion) {
-      case 'ticket_size':
+      case 'ticket_size': {
+        const amountContext = await this.buildMinimumTicketContext(
+          assessment.location
+        );
+
         if (assessment.question === 'investor_profile' && assessment.location) {
-          return `Great. Since you're based in ${assessment.location}, that works for the diaspora requirement. Can you comfortably invest ₦5 million or more?`;
+          return `Great. Since you're based in ${assessment.location}, that works for the diaspora requirement. Can you comfortably invest ₦5 million (${amountContext}) or more?`;
         }
 
-        return 'Great. That works for the investor profile requirement. Can you comfortably invest ₦5 million or more?';
+        return `Great. That works for the investor profile requirement. Can you comfortably invest ₦5 million (${amountContext}) or more?`;
+      }
       case 'investment_horizon':
         return 'Perfect. Can you keep the investment in place for at least 5 years?';
       case 'kyc_willingness':
@@ -1603,6 +1670,39 @@ export class AgentOrchestrator {
       case 'investor_profile':
         return this.buildQualificationQuestionPrompt('', 'investor_profile');
     }
+  }
+
+  private async buildMinimumTicketContext(
+    location?: string | null
+  ): Promise<string> {
+    const fallback = 'about $3,300 USD';
+    const investorCurrency = detectInvestorCurrencyFromLocation(location);
+    const liveRate = await Promise.race([
+      this.getMinimumTicketFxRate(investorCurrency),
+      new Promise<null>((resolve) => {
+        globalThis.setTimeout(() => resolve(null), 3_500);
+      }),
+    ]);
+
+    if (!liveRate) {
+      return fallback;
+    }
+
+    return `approximately ${formatCurrencyAmount(
+      liveRate.destinationAmount,
+      investorCurrency,
+      0
+    )} ${investorCurrency} at today's rate`;
+  }
+
+  private async getMinimumTicketFxRate(
+    investorCurrency: GreyInvestorCurrency
+  ) {
+    return getGreyRate({
+      sourceAmount: MINIMUM_TICKET_NGN,
+      sourceCurrency: 'NGN',
+      destinationCurrency: investorCurrency,
+    });
   }
 
   private buildQualificationQuestionPrompt(

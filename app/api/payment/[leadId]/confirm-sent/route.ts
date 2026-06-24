@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { logAuditEvent } from '@/lib/db/audit';
 import { getLeadById } from '@/lib/db/leads';
 import { saveMessage } from '@/lib/db/messages';
+import { detectInvestorCurrencyFromLocation } from '@/lib/grey/currency';
 import {
   getLeadCommitmentSelection,
   getPaymentConfirmationStatus,
@@ -33,11 +35,19 @@ export async function GET(
     }
 
     const confirmation = await getPaymentConfirmationStatus(leadId);
+    const latestAnswers = await getLatestQualificationAnswerMap(leadId);
+    const investorLocation =
+      lead.country?.trim() ||
+      latestAnswers.country_of_residence?.answer?.trim() ||
+      latestAnswers.investor_profile?.answer?.trim() ||
+      null;
 
     return NextResponse.json({
       leadStage: lead.stage,
       paymentDetails: PAYMENT_DETAILS,
       confirmation,
+      investorLocation,
+      investorCurrency: detectInvestorCurrencyFromLocation(investorLocation),
     });
   } catch (error) {
     console.error('Error loading payment confirmation state:', error);
