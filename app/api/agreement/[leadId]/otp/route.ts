@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeadById } from '@/lib/db/leads';
+import { coerceCommitmentSlotCount } from '@/lib/agreement/commitment';
 import { logAuditEvent } from '@/lib/db/audit';
+import { getLeadById } from '@/lib/db/leads';
 import { createOtpCode } from '@/lib/db/otp';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getOtpEmailTemplate } from '@/lib/email/templates';
+import { saveLeadCommitmentSelection } from '@/lib/payment';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
 const OTP_EXPIRY_MINUTES = 10;
@@ -14,6 +16,16 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    const body = await request.json().catch(() => ({}));
+    const slotCount = coerceCommitmentSlotCount(body.slotCount);
+
+    if (!slotCount) {
+      return NextResponse.json(
+        { error: 'A valid slot count is required before signing.' },
+        { status: 400 }
+      );
+    }
+
     const lead = await getLeadById(leadId);
 
     if (!lead) {
@@ -33,6 +45,11 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const commitmentSelection = await saveLeadCommitmentSelection({
+      leadId,
+      slotCount,
+    });
 
     const otp = await createOtpCode({
       leadId,
@@ -59,6 +76,8 @@ export async function POST(
       metadata: {
         purpose: AGREEMENT_OTP_PURPOSE,
         expires_at: otp.expires_at,
+        slot_count: commitmentSelection.slotCount,
+        commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
       },
       ipAddress: request.headers.get('x-forwarded-for') || undefined,
       userAgent: request.headers.get('user-agent') || undefined,

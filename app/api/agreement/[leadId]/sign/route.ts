@@ -5,6 +5,7 @@ import {
   buildAgreementHashInput,
   getAgreementMarkdown,
 } from '@/lib/agreement/template';
+import { coerceCommitmentSlotCount } from '@/lib/agreement/commitment';
 import { applyOrchestratorStageTransition } from '@/lib/agent/orchestrator';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
@@ -15,7 +16,7 @@ import {
 import { saveMessage } from '@/lib/db/messages';
 import { consumeOtpCode } from '@/lib/db/otp';
 import {
-  resolveCommitmentLabel,
+  getLeadCommitmentSelection,
   triggerPaymentInstructions,
 } from '@/lib/payment';
 
@@ -32,10 +33,11 @@ export async function POST(
       typeof body.fullName === 'string' ? body.fullName.trim() : '';
     const otpCode =
       typeof body.otpCode === 'string' ? body.otpCode.trim() : '';
+    const requestedSlotCount = coerceCommitmentSlotCount(body.slotCount);
 
-    if (!fullName || !otpCode) {
+    if (!fullName || !otpCode || !requestedSlotCount) {
       return NextResponse.json(
-        { error: 'Full name and verification code are required' },
+        { error: 'Full name, slot count, and verification code are required' },
         { status: 400 }
       );
     }
@@ -60,6 +62,18 @@ export async function POST(
       );
     }
 
+    const commitmentSelection = await getLeadCommitmentSelection(leadId);
+
+    if (requestedSlotCount !== commitmentSelection.slotCount) {
+      return NextResponse.json(
+        {
+          error:
+            'Your commitment changed after the verification code was issued. Please request a new code.',
+        },
+        { status: 409 }
+      );
+    }
+
     const otpRecord = await consumeOtpCode({
       leadId,
       purpose: AGREEMENT_OTP_PURPOSE,
@@ -74,13 +88,14 @@ export async function POST(
     }
 
     const signedAt = Math.floor(Date.now() / 1000);
-    const commitmentLabel = await resolveCommitmentLabel(leadId);
+
     const agreementText = getAgreementMarkdown({
       lead: {
-        ...lead,
+        email: lead.email,
         full_name: fullName,
       },
-      commitmentLabel,
+      commitmentLabel: commitmentSelection.commitmentLabel,
+      slotCount: commitmentSelection.slotCount,
       generatedAt: signedAt,
     });
     const documentHash = createHash('sha256')
@@ -106,6 +121,8 @@ export async function POST(
         signed_at: signedAt,
         otp_verified_at: signedAt,
         otp_issued_at: otpRecord.created_at,
+        slot_count: commitmentSelection.slotCount,
+        commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
         agreement_version: AGREEMENT_VERSION,
         document_hash: documentHash,
       },

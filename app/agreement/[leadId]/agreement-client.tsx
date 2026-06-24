@@ -2,6 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import {
+  buildCommitmentSelection,
+  coerceCommitmentSlotCount,
+  getSlotLabel,
+  type CommitmentSelection,
+} from '@/lib/agreement/commitment';
+import { getAgreementMarkdown } from '@/lib/agreement/template';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
 
@@ -15,7 +22,7 @@ interface AgreementLead {
 interface AgreementClientProps {
   lead: AgreementLead;
   agreementMarkdown: string;
-  commitmentLabel: string;
+  initialCommitment: CommitmentSelection;
 }
 
 function getStageLabel(stage: string): string {
@@ -36,11 +43,12 @@ function getStageLabel(stage: string): string {
 export default function AgreementClient({
   lead,
   agreementMarkdown,
-  commitmentLabel,
+  initialCommitment,
 }: AgreementClientProps) {
   const { notify } = useFeedback();
   const [stage, setStage] = useState(lead.stage);
   const [fullName, setFullName] = useState(lead.full_name || '');
+  const [slotCount, setSlotCount] = useState(initialCommitment.slotCount);
   const [otpCode, setOtpCode] = useState('');
   const [otpSending, setOtpSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
@@ -49,6 +57,47 @@ export default function AgreementClient({
   const [warning, setWarning] = useState<string | null>(null);
 
   const canSign = stage === 'agreement_pending';
+  const commitment = buildCommitmentSelection(slotCount);
+  const perSlotCommitmentLabel = buildCommitmentSelection(1).commitmentLabel;
+  const agreementPreviewMarkdown = getAgreementMarkdown({
+    lead: {
+      email: lead.email,
+      full_name: fullName.trim() || lead.full_name,
+    },
+    commitmentLabel: commitment.commitmentLabel,
+    slotCount: commitment.slotCount,
+  });
+  const agreementPreviewHtml = markdownToHtml(
+    agreementPreviewMarkdown || agreementMarkdown
+  );
+
+  const resetOtpState = (showNotice: boolean) => {
+    if (!otpSent && !otpCode) {
+      return;
+    }
+
+    setOtpSent(false);
+    setOtpCode('');
+
+    if (showNotice) {
+      notify({
+        title: 'Verification reset',
+        message:
+          'Your commitment changed. Request a fresh verification code before signing.',
+        tone: 'info',
+      });
+    }
+  };
+
+  const updateSlotCount = (nextValue: unknown) => {
+    const nextSlotCount = coerceCommitmentSlotCount(nextValue);
+    if (!nextSlotCount || nextSlotCount === slotCount) {
+      return;
+    }
+
+    setSlotCount(nextSlotCount);
+    resetOtpState(true);
+  };
 
   const sendOtp = async () => {
     if (!canSign || otpSending) {
@@ -68,6 +117,10 @@ export default function AgreementClient({
     try {
       const response = await fetch(`/api/agreement/${lead.id}/otp`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotCount: commitment.slotCount,
+        }),
       });
       const data = await response.json();
 
@@ -81,6 +134,7 @@ export default function AgreementClient({
       }
 
       setOtpSent(true);
+      setWarning(null);
       notify({
         title: 'Verification code sent',
         message: 'Check your inbox for the 6-digit code.',
@@ -120,6 +174,7 @@ export default function AgreementClient({
         body: JSON.stringify({
           fullName,
           otpCode,
+          slotCount: commitment.slotCount,
         }),
       });
       const data = await response.json();
@@ -187,7 +242,12 @@ export default function AgreementClient({
             <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
               Commitment
             </div>
-            <div className="mt-2 text-sm text-futurex-ink">{commitmentLabel}</div>
+            <div className="mt-2 text-sm text-futurex-ink">
+              {commitment.commitmentLabel}
+            </div>
+            <div className="mt-1 text-xs text-futurex-muted">
+              {getSlotLabel(commitment.slotCount)}
+            </div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
@@ -199,7 +259,7 @@ export default function AgreementClient({
 
         <div
           className="markdown-content max-h-[70vh] overflow-y-auto px-6 py-6 text-sm leading-7 text-futurex-ink"
-          dangerouslySetInnerHTML={{ __html: markdownToHtml(agreementMarkdown) }}
+          dangerouslySetInnerHTML={{ __html: agreementPreviewHtml }}
         />
       </section>
 
@@ -217,6 +277,92 @@ export default function AgreementClient({
           </p>
 
           <div className="mt-5 space-y-4">
+            <div className="rounded-[22px] border border-futurex-line bg-futurex-surface2 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-futurex-ink">
+                    Final commitment
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-futurex-muted">
+                    Choose how many slots you want to subscribe for before you
+                    request your verification code.
+                  </p>
+                </div>
+                {otpSent && canSign ? (
+                  <button
+                    type="button"
+                    onClick={() => resetOtpState(false)}
+                    className="rounded-full border border-futurex-line px-3 py-1 text-xs font-medium text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+                  >
+                    Edit commitment
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => updateSlotCount(slotCount - 1)}
+                  disabled={!canSign || otpSent || slotCount <= 1}
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-futurex-line text-lg text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-40"
+                >
+                  -
+                </button>
+                <label className="flex-1">
+                  <span className="mb-2 block text-sm text-futurex-muted">
+                    Number of slots
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={slotCount}
+                    onChange={(event) => updateSlotCount(event.target.value)}
+                    disabled={!canSign || otpSent}
+                    inputMode="numeric"
+                    className="w-full rounded-xl border border-futurex-line bg-futurex-surface px-4 py-3 text-futurex-ink outline-none transition focus:border-futurex-gold disabled:opacity-60"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => updateSlotCount(slotCount + 1)}
+                  disabled={!canSign || otpSent}
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-futurex-line text-lg text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.18em] text-futurex-muted">
+                    Per slot
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-futurex-ink">
+                    {perSlotCommitmentLabel}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-futurex-gold-border bg-futurex-gold-soft px-4 py-3">
+                  <div className="text-xs uppercase tracking-[0.18em] text-futurex-gold">
+                    Total commitment
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-futurex-gold">
+                    {commitment.commitmentLabel}
+                  </div>
+                  <div className="mt-1 text-xs text-futurex-gold/80">
+                    {getSlotLabel(commitment.slotCount)}
+                  </div>
+                </div>
+              </div>
+
+              {otpSent && canSign ? (
+                <p className="mt-3 text-xs leading-5 text-futurex-muted">
+                  This commitment is currently locked to the active verification
+                  code. Use “Edit commitment” if you need to change the amount.
+                </p>
+              ) : null}
+            </div>
+
             <label className="block">
               <span className="mb-2 block text-sm text-futurex-muted">
                 Full legal name

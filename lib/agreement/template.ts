@@ -1,8 +1,8 @@
-import type { Lead } from '@/lib/db/leads';
 import {
   MINIMUM_HOLD_YEARS,
   MINIMUM_TICKET_NGN,
 } from '@/lib/agent/qualification';
+import { getSlotLabel } from './commitment';
 
 export const SPV_NAME = 'Akwa Ibom Hospitality SPV';
 export const SPV_CODE = 'AIHV';
@@ -21,9 +21,15 @@ export const DEAL_ROOM_FACTS = [
   { label: 'Exit', value: EXIT_STRATEGY },
 ];
 
+export interface AgreementInvestorParty {
+  email: string;
+  full_name?: string;
+}
+
 export function getAgreementMarkdown(params: {
-  lead: Lead;
+  lead: AgreementInvestorParty;
   commitmentLabel: string;
+  slotCount: number;
   generatedAt?: number;
 }): string {
   const generatedAt =
@@ -51,6 +57,7 @@ This agreement is between **FutureX** (as arranger and operator) and **${investo
 ## Investor Commitment
 
 - Investor email: ${params.lead.email}
+- Subscription allocation: ${getSlotLabel(params.slotCount)}
 - Recorded commitment: ${params.commitmentLabel}
 - Minimum hold period: ${MINIMUM_HOLD_YEARS} years
 - Expected exit path: ${EXIT_STRATEGY}

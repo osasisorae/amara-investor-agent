@@ -8,7 +8,7 @@ import {
   getLeadById,
   markAgreementViewed,
 } from '@/lib/db/leads';
-import { resolveCommitmentLabel } from '@/lib/payment';
+import { getLeadCommitmentSelection } from '@/lib/payment';
 
 export default async function AgreementPage({
   params,
@@ -37,10 +37,11 @@ export default async function AgreementPage({
     userAgent: headerStore.get('user-agent') || undefined,
   });
 
-  const commitmentLabel = await resolveCommitmentLabel(params.leadId);
+  const commitment = await getLeadCommitmentSelection(params.leadId);
   const agreementMarkdown = getAgreementMarkdown({
     lead,
-    commitmentLabel,
+    commitmentLabel: commitment.commitmentLabel,
+    slotCount: commitment.slotCount,
   });
 
   return (
@@ -76,7 +77,7 @@ export default async function AgreementPage({
             stage: lead.stage,
           }}
           agreementMarkdown={agreementMarkdown}
-          commitmentLabel={commitmentLabel}
+          initialCommitment={commitment}
         />
       </main>
     </div>

@@ -1,8 +1,17 @@
-import { MINIMUM_TICKET_NGN, parseMoneyValue } from '@/lib/agent/qualification';
 import { SPV_CODE } from '@/lib/agreement/template';
+import {
+  AGREEMENT_COMMITMENT_AMOUNT_NGN_QUESTION,
+  AGREEMENT_SLOT_COUNT_QUESTION,
+  buildCommitmentSelection,
+  DEFAULT_COMMITMENT_SLOT_COUNT,
+  type CommitmentSelection,
+} from '@/lib/agreement/commitment';
 import { logAuditEvent } from '@/lib/db/audit';
 import type { Lead } from '@/lib/db/leads';
-import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
+import {
+  getLatestQualificationAnswerMap,
+  saveQualificationAnswer,
+} from '@/lib/db/qualification';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getPaymentInstructionsEmailTemplate } from '@/lib/email/templates';
 
@@ -28,30 +37,68 @@ function addBusinessDays(baseDate: Date, businessDays: number): Date {
   return result;
 }
 
-function formatNairaAmount(amount: number): string {
-  return `₦${amount.toLocaleString('en-NG')}`;
+function parseStoredPositiveInteger(value?: string): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value.trim());
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
 }
 
-export async function resolveCommitmentLabel(
+export async function getLeadCommitmentSelection(
   leadId: string
-): Promise<string> {
+): Promise<CommitmentSelection> {
   const latestAnswers = await getLatestQualificationAnswerMap(leadId);
-  const ticketAnswer = latestAnswers.ticket_size?.answer;
+  const savedSlotCount = parseStoredPositiveInteger(
+    latestAnswers[AGREEMENT_SLOT_COUNT_QUESTION]?.answer
+  );
+  const savedCommitmentAmount = parseStoredPositiveInteger(
+    latestAnswers[AGREEMENT_COMMITMENT_AMOUNT_NGN_QUESTION]?.answer
+  );
 
-  if (!ticketAnswer) {
-    return formatNairaAmount(MINIMUM_TICKET_NGN);
+  if (savedSlotCount) {
+    const selection = buildCommitmentSelection(savedSlotCount);
+
+    if (
+      !savedCommitmentAmount ||
+      savedCommitmentAmount === selection.commitmentAmountNgn
+    ) {
+      return selection;
+    }
   }
 
-  const parsedAmount = parseMoneyValue(ticketAnswer);
-  if (!parsedAmount) {
-    return formatNairaAmount(MINIMUM_TICKET_NGN);
-  }
+  return buildCommitmentSelection(DEFAULT_COMMITMENT_SLOT_COUNT);
+}
 
-  if (parsedAmount.currency === 'NGN') {
-    return formatNairaAmount(parsedAmount.amount);
-  }
+export async function saveLeadCommitmentSelection(params: {
+  leadId: string;
+  slotCount: number;
+}): Promise<CommitmentSelection> {
+  const selection = buildCommitmentSelection(params.slotCount);
 
-  return `USD $${parsedAmount.amount.toLocaleString('en-US')} equivalent`;
+  await saveQualificationAnswer({
+    leadId: params.leadId,
+    question: AGREEMENT_SLOT_COUNT_QUESTION,
+    answer: String(selection.slotCount),
+    passed: true,
+  });
+  await saveQualificationAnswer({
+    leadId: params.leadId,
+    question: AGREEMENT_COMMITMENT_AMOUNT_NGN_QUESTION,
+    answer: String(selection.commitmentAmountNgn),
+    passed: true,
+  });
+
+  return selection;
+}
+
+export async function resolveCommitmentLabel(leadId: string): Promise<string> {
+  return (await getLeadCommitmentSelection(leadId)).commitmentLabel;
 }
 
 export function getPaymentReference(leadId: string): string {
@@ -70,7 +117,8 @@ export async function triggerPaymentInstructions(
   }
 
   const paymentReference = getPaymentReference(lead.id);
-  const commitmentLabel = await resolveCommitmentLabel(lead.id);
+  const commitmentSelection = await getLeadCommitmentSelection(lead.id);
+  const commitmentLabel = commitmentSelection.commitmentLabel;
   const deadline = addBusinessDays(new Date(), 5);
   const deadlineLabel = deadline.toLocaleDateString('en-NG', {
     year: 'numeric',
@@ -99,6 +147,8 @@ export async function triggerPaymentInstructions(
     metadata: {
       payment_reference: paymentReference,
       commitment_label: commitmentLabel,
+      commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
+      slot_count: commitmentSelection.slotCount,
       deadline: deadlineLabel,
     },
   });
