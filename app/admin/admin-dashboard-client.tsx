@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { KycReviewPanel } from '@/components/admin/KycReviewPanel';
 import { useFeedback } from '@/components/feedback-provider';
 
 interface Lead {
@@ -45,6 +46,9 @@ export default function AdminDashboardClient({
   const [notes, setNotes] = useState('');
   const [adding, setAdding] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [expandedKycLeadId, setExpandedKycLeadId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     fetchLeads();
@@ -145,107 +149,6 @@ export default function AdminDashboardClient({
       });
     } finally {
       setAdding(false);
-    }
-  };
-
-  const approveKYC = async (leadId: string) => {
-    if (
-      !(await confirm({
-        title: 'Approve KYC',
-        message: 'Approve this KYC submission?',
-        confirmLabel: 'Approve',
-      }))
-    ) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/admin/kyc/${leadId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve',
-          approvedBy: adminEmail,
-        }),
-      });
-
-      if (handleUnauthorized(response)) {
-        return;
-      }
-
-      if (response.ok) {
-        notify({
-          title: 'KYC approved',
-          message: 'The investor can now proceed to the agreement stage.',
-          tone: 'success',
-        });
-        fetchLeads();
-      } else {
-        const error = await response.json();
-        notify({
-          title: 'Approval failed',
-          message: error.error || 'Failed to approve KYC.',
-          tone: 'error',
-        });
-      }
-    } catch (error) {
-      console.error('Failed to approve KYC:', error);
-      notify({
-        title: 'Approval failed',
-        message: 'Failed to approve KYC.',
-        tone: 'error',
-      });
-    }
-  };
-
-  const rejectKYC = async (leadId: string) => {
-    if (
-      !(await confirm({
-        title: 'Reject KYC',
-        message: 'Reject this KYC submission?',
-        confirmLabel: 'Reject',
-        tone: 'danger',
-      }))
-    ) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/admin/kyc/${leadId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'reject',
-          approvedBy: adminEmail,
-        }),
-      });
-
-      if (handleUnauthorized(response)) {
-        return;
-      }
-
-      if (response.ok) {
-        notify({
-          title: 'KYC rejected',
-          message: 'The investor has been marked as rejected.',
-          tone: 'success',
-        });
-        fetchLeads();
-      } else {
-        const error = await response.json();
-        notify({
-          title: 'Rejection failed',
-          message: error.error || 'Failed to reject KYC.',
-          tone: 'error',
-        });
-      }
-    } catch (error) {
-      console.error('Failed to reject KYC:', error);
-      notify({
-        title: 'Rejection failed',
-        message: 'Failed to reject KYC.',
-        tone: 'error',
-      });
     }
   };
 
@@ -607,23 +510,6 @@ export default function AdminDashboardClient({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {lead.stage === 'pending_human_review' &&
-                      lead.kyc_submitted_at ? (
-                        <>
-                          <button
-                            onClick={() => approveKYC(lead.id)}
-                            className="rounded bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700"
-                          >
-                            Approve KYC
-                          </button>
-                          <button
-                            onClick={() => rejectKYC(lead.id)}
-                            className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
-                          >
-                            Reject KYC
-                          </button>
-                        </>
-                      ) : null}
                       {lead.stage === 'payment_pending' ? (
                         <button
                           onClick={() => confirmPayment(lead.id)}
@@ -655,6 +541,25 @@ export default function AdminDashboardClient({
                       </button>
                     </div>
                   </div>
+
+                  {lead.stage === 'pending_human_review' &&
+                  lead.kyc_submitted_at ? (
+                    <KycReviewPanel
+                      leadId={lead.id}
+                      leadEmail={lead.email}
+                      isOpen={expandedKycLeadId === lead.id}
+                      onToggle={() =>
+                        setExpandedKycLeadId((current) =>
+                          current === lead.id ? null : lead.id
+                        )
+                      }
+                      onUnauthorized={handleUnauthorized}
+                      onComplete={() => {
+                        setExpandedKycLeadId(null);
+                        fetchLeads();
+                      }}
+                    />
+                  ) : null}
                 </div>
               ))}
             </div>

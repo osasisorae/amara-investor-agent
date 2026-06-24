@@ -1,0 +1,230 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import type { KycUploadComponentData } from '@/lib/chat/components';
+import {
+  getKycUploadSlots,
+  type KycPrimaryDocumentType,
+  type KycUploadSlot,
+} from '@/lib/kyc/config';
+
+interface UploadState {
+  filename?: string;
+  error?: string;
+  uploading: boolean;
+}
+
+interface KYCUploadCardProps {
+  leadId: string;
+  data?: KycUploadComponentData;
+  disabled?: boolean;
+  onSendPrompt: (message: string) => Promise<void>;
+}
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_FILE_TYPES = '.jpg,.jpeg,.png,.pdf';
+
+function isAcceptedFile(file: File): boolean {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  return ['jpg', 'jpeg', 'png', 'pdf'].includes(extension || '');
+}
+
+export function KYCUploadCard({
+  leadId,
+  data,
+  disabled = false,
+  onSendPrompt,
+}: KYCUploadCardProps) {
+  const documentType = (data?.documentType || 'passport') as KycPrimaryDocumentType;
+  const slots = useMemo(() => getKycUploadSlots(documentType), [documentType]);
+  const [uploads, setUploads] = useState<Partial<Record<KycUploadSlot, UploadState>>>(
+    {}
+  );
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const updateSlot = (slot: KycUploadSlot, patch: Partial<UploadState>) => {
+    setUploads((current) => ({
+      ...current,
+      [slot]: {
+        uploading: false,
+        ...(current[slot] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const uploadFile = async (slot: KycUploadSlot, file: File) => {
+    if (disabled || submitting) {
+      return;
+    }
+
+    if (!isAcceptedFile(file)) {
+      updateSlot(slot, {
+        error: 'Only JPG, JPEG, PNG, and PDF files are allowed.',
+        filename: undefined,
+        uploading: false,
+      });
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      updateSlot(slot, {
+        error: 'Each file must be 5MB or smaller.',
+        filename: undefined,
+        uploading: false,
+      });
+      return;
+    }
+
+    updateSlot(slot, {
+      error: undefined,
+      filename: undefined,
+      uploading: true,
+    });
+    setSubmitError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('docType', slot);
+      formData.append('documentType', documentType);
+
+      const response = await fetch(`/api/kyc/${leadId}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        filename?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.filename) {
+        updateSlot(slot, {
+          error: payload.error || 'Upload failed.',
+          filename: undefined,
+          uploading: false,
+        });
+        return;
+      }
+
+      updateSlot(slot, {
+        error: undefined,
+        filename: payload.filename,
+        uploading: false,
+      });
+    } catch (error) {
+      console.error('Failed to upload KYC document:', error);
+      updateSlot(slot, {
+        error: 'Upload failed.',
+        filename: undefined,
+        uploading: false,
+      });
+    }
+  };
+
+  const allRequiredUploaded = slots.every(
+    (slot) => !slot.required || Boolean(uploads[slot.key]?.filename)
+  );
+
+  const submit = async () => {
+    if (disabled || submitting || !allRequiredUploaded) {
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError('');
+
+    try {
+      await onSendPrompt('All documents uploaded');
+    } catch (error) {
+      console.error('Failed to submit KYC package:', error);
+      setSubmitError('Failed to submit KYC package.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5">
+      <div className="text-[11px] uppercase tracking-[0.22em] text-futurex-gold">
+        KYC upload
+      </div>
+      <h3 className="mt-3 font-serif text-2xl text-futurex-ink">
+        {data?.title || 'Upload your KYC documents'}
+      </h3>
+      <p className="mt-2 text-sm leading-6 text-futurex-muted">
+        Selected ID: {data?.documentTypeLabel || 'Identity document'}
+      </p>
+
+      <div className="mt-5 space-y-4">
+        {slots.map((slot) => {
+          const state = uploads[slot.key];
+
+          return (
+            <div
+              key={slot.key}
+              className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-medium text-futurex-ink">
+                    {slot.label}
+                  </div>
+                  <div className="mt-1 text-xs text-futurex-muted">
+                    JPG, JPEG, PNG, or PDF. Max 5MB.
+                  </div>
+                </div>
+                <label className="inline-flex cursor-pointer items-center rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold">
+                  <span>
+                    {state?.uploading ? 'Uploading...' : 'Choose file'}
+                  </span>
+                  <input
+                    type="file"
+                    accept={ACCEPTED_FILE_TYPES}
+                    disabled={disabled || submitting || state?.uploading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void uploadFile(slot.key, file);
+                      }
+                      event.currentTarget.value = '';
+                    }}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+
+              {state?.filename ? (
+                <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                  Uploaded: {state.filename}
+                </div>
+              ) : null}
+
+              {state?.error ? (
+                <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                  {state.error}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      {submitError ? (
+        <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {submitError}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={submit}
+        disabled={disabled || submitting || !allRequiredUploaded}
+        className="mt-5 rounded-full bg-futurex-gold px-5 py-3 text-sm font-semibold text-futurex-bg transition hover:opacity-90 disabled:opacity-50"
+      >
+        {submitting ? 'Submitting...' : 'Submit KYC'}
+      </button>
+    </div>
+  );
+}

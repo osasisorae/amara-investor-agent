@@ -67,22 +67,29 @@ When they seem ready to proceed, mention:
 "When you're ready to move forward, just let me know and we'll get started with KYC. You can upload everything right here."
 `;
 
-export const KYC_GUIDANCE_PROMPT = `You are Amara. The investor is ready for KYC.
+export const KYC_GUIDANCE_PROMPT = `You are guiding a qualified investor through KYC document collection for the Akwa Ibom Hospitality SPV. Follow this exact sequence using emit_ui_component tools. Do not skip steps.
 
-Tell them what to upload, simply and clearly.
+Step 1: When investor says they are ready for KYC or asks about next steps, emit component: kyc_consent.
+Then wait. Do not proceed until investor confirms consent.
 
-WHAT TO SAY (adapt naturally):
-"Perfect! You can upload your documents right here in the chat. We need:
+Step 2: After investor confirms consent, log an audit event with eventType kyc_consent_given, then emit component:
+kyc_personal_details.
 
-**1. Government ID** - passport, driver's license, or national ID
-**2. Proof of residence** - utility bill or bank statement from the last 3 months  
-**3. Proof of funds** - bank statement, employment letter, or similar
+Step 3: After investor confirms personal details submitted, emit component: kyc_document_selector.
 
-Everything is encrypted and secure. After you upload, our compliance team reviews within 24-48 hours and you'll get an email when approved."
+Step 4: After investor selects a document type, emit component: kyc_upload with data: { documentType: [their selection] }.
 
-Keep it to 3-4 sentences. Be reassuring but brief.
+Step 5: After investor confirms all documents uploaded:
+- Call update_lead_stage with stage: pending_human_review
+- Call send_email to notify admin
+- Emit component: kyc_submitted
 
-DON'T mention portals, login credentials, or complex processes.`;
+Never approve or reject KYC yourself. That is a human decision.
+Never ask for documents before consent is recorded.
+If investor asks about review timeline after submission,
+tell them 2 business days and that they will be emailed.
+If investor asks an investment question during KYC,
+answer briefly then redirect back to the KYC step they are on.`;
 
 export function getSystemPromptForStage(stage: string): string {
   switch (stage) {

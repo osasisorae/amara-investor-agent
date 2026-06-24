@@ -1,17 +1,72 @@
+import { Buffer } from 'node:buffer';
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
-import { nanoid } from 'nanoid';
-import {
-  buildPipelineStatusData,
-  createComponentMetadata,
-  getComponentFallbackText,
-} from '@/lib/chat/components';
-import { applyOrchestratorStageTransition } from '@/lib/agent/orchestrator';
-import { toChatMessages } from '@/lib/chat/messages';
-import { getLeadById, markKYCSubmitted } from '@/lib/db/leads';
-import { execute, queryOne } from '@/lib/db/client';
+import { getLeadById } from '@/lib/db/leads';
 import { logAuditEvent } from '@/lib/db/audit';
-import { saveMessage } from '@/lib/db/messages';
+import { hasAuditEventForLead, saveKycDocument } from '@/lib/db/kyc';
+import { orchestrator } from '@/lib/agent/orchestrator';
+import { toChatMessages } from '@/lib/chat/messages';
+import {
+  buildStoredKycDocType,
+  normalizeKycDocumentType,
+  type KycUploadSlot,
+} from '@/lib/kyc/config';
+import { uploadFile } from '@/lib/storage/r2';
+
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'pdf']);
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+]);
+const ALLOWED_DOC_TYPES = new Set<KycUploadSlot>([
+  'document_front',
+  'document_back',
+  'proof_of_address',
+  'source_of_funds',
+]);
+
+function getFileExtension(file: File): string | null {
+  const extensionFromName = file.name.split('.').pop()?.toLowerCase();
+  if (extensionFromName && ALLOWED_EXTENSIONS.has(extensionFromName)) {
+    return extensionFromName;
+  }
+
+  switch (file.type) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'application/pdf':
+      return 'pdf';
+    default:
+      return null;
+  }
+}
+
+function getContentType(extension: string): string {
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+function sanitizeDocType(value: FormDataEntryValue | null): KycUploadSlot | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return ALLOWED_DOC_TYPES.has(value as KycUploadSlot)
+    ? (value as KycUploadSlot)
+    : null;
+}
 
 export async function POST(
   request: NextRequest,
@@ -19,9 +74,8 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
-    const formData = await request.formData();
-
     const lead = await getLeadById(leadId);
+
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
@@ -33,55 +87,83 @@ export async function POST(
       );
     }
 
-    const file = formData.get('file') as File;
-    const docType = formData.get('docType') as string;
-
-    if (!file || !docType) {
+    const hasConsent = await hasAuditEventForLead(leadId, 'kyc_consent_given');
+    if (!hasConsent) {
       return NextResponse.json(
-        { error: 'File and document type are required' },
+        { error: 'Consent must be recorded before document upload' },
         { status: 400 }
       );
     }
 
-    // For demo: if no Vercel Blob token, store as placeholder
-    let fileUrl = '';
-    
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      // Upload to Vercel Blob
-      const blob = await put(`kyc/${leadId}/${nanoid()}-${file.name}`, file, {
-        access: 'public',
-      });
-      fileUrl = blob.url;
-    } else {
-      // Demo mode: generate placeholder URL
-      fileUrl = `/demo/kyc/${leadId}/${file.name}`;
-    }
-
-    // Save document metadata to database
-    const docId = nanoid();
-    const now = Math.floor(Date.now() / 1000);
-
-    await execute(
-      `INSERT INTO kyc_documents (id, lead_id, doc_type, file_url, file_name, file_size, uploaded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [docId, leadId, docType, fileUrl, file.name, file.size, now]
+    const formData = await request.formData();
+    const fileEntry = formData.get('file');
+    const docType = sanitizeDocType(formData.get('docType'));
+    const selectedDocumentType = normalizeKycDocumentType(
+      typeof formData.get('documentType') === 'string'
+        ? String(formData.get('documentType'))
+        : ''
     );
 
-    // Log audit event
+    if (!(fileEntry instanceof File) || !docType) {
+      return NextResponse.json(
+        { error: 'File and valid document type are required' },
+        { status: 400 }
+      );
+    }
+
+    if (docType.startsWith('document_') && !selectedDocumentType) {
+      return NextResponse.json(
+        { error: 'A government ID type must be selected first' },
+        { status: 400 }
+      );
+    }
+
+    if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: 'Files must be 5MB or smaller' },
+        { status: 400 }
+      );
+    }
+
+    const extension = getFileExtension(fileEntry);
+    if (
+      !extension ||
+      (fileEntry.type && !ALLOWED_MIME_TYPES.has(fileEntry.type))
+    ) {
+      return NextResponse.json(
+        { error: 'Only JPG, JPEG, PNG, and PDF files are allowed' },
+        { status: 400 }
+      );
+    }
+
+    const storedDocType = docType.startsWith('document_') && selectedDocumentType
+      ? buildStoredKycDocType(selectedDocumentType, docType)
+      : docType;
+    const timestamp = Date.now();
+    const filename = `${leadId}-${storedDocType}-${timestamp}.${extension}`;
+    const buffer = Buffer.from(await fileEntry.arrayBuffer());
+    const contentType = fileEntry.type || getContentType(extension);
+
+    const storedFilename = await uploadFile(buffer, filename, contentType);
+
+    await saveKycDocument({
+      leadId,
+      docType: storedDocType,
+      filename: storedFilename,
+      fileSize: fileEntry.size,
+    });
+
     await logAuditEvent({
       leadId,
-      eventType: 'kyc_submitted',
+      eventType: 'kyc_document_uploaded',
       metadata: {
-        doc_type: docType,
-        file_name: file.name,
-        file_size: file.size,
+        docType: storedDocType,
+        filename: storedFilename,
       },
     });
 
     return NextResponse.json({
-      success: true,
-      documentId: docId,
-      fileUrl,
+      filename: storedFilename,
     });
   } catch (error) {
     console.error('Error uploading KYC document:', error);
@@ -92,15 +174,14 @@ export async function POST(
   }
 }
 
-// Mark KYC as complete and move to pending review
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
     const { leadId } = params;
-
     const lead = await getLeadById(leadId);
+
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
@@ -112,52 +193,18 @@ export async function PATCH(
       );
     }
 
-    const uploadedCount = await queryOne<{ total: number }>(
-      'SELECT COUNT(*) as total FROM kyc_documents WHERE lead_id = ?',
-      [leadId]
-    );
-
-    if (!uploadedCount || Number(uploadedCount.total) < 2) {
-      return NextResponse.json(
-        { error: 'At least two KYC documents are required before submission' },
-        { status: 400 }
-      );
-    }
-
-    // Mark as submitted and move to pending review
-    await markKYCSubmitted(leadId);
-    await applyOrchestratorStageTransition(leadId, 'pending_human_review');
-
-    // Log audit event
-    await logAuditEvent({
-      leadId,
-      eventType: 'kyc_submitted',
-      metadata: { status: 'pending_human_review' },
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+      new URL(request.url).origin;
+    const response = await orchestrator.processMessage(lead, 'All documents uploaded', {
+      appUrl,
     });
-
-    const agentMessages = [
-      await saveMessage({
-        leadId,
-        role: 'agent',
-        content:
-          'Thanks. Your documents are now with our compliance team for review. I’ll keep you posted as soon as there is an update.',
-      }),
-      await saveMessage({
-        leadId,
-        role: 'agent',
-        content: getComponentFallbackText('pipeline_status'),
-        metadata: createComponentMetadata(
-          'pipeline_status',
-          buildPipelineStatusData('pending_human_review')
-        ) as unknown as Record<string, unknown>,
-      }),
-    ];
+    const updatedLead = (await getLeadById(leadId)) || lead;
 
     return NextResponse.json({
       success: true,
-      stage: 'pending_human_review',
-      message: 'KYC submitted for review',
-      messages: toChatMessages(agentMessages),
+      stage: updatedLead.stage,
+      messages: toChatMessages(response.agentMessages),
     });
   } catch (error) {
     console.error('Error completing KYC submission:', error);

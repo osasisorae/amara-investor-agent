@@ -108,7 +108,7 @@ export function getOutreachEmailTemplate(params: {
       
       <p><strong>Amara</strong><br>
       FutureX Investor Agent<br>
-      <span class="gold">her@investfuturex.com</span></p>
+      <span class="gold">amara@investfuturex.com</span></p>
     `,
     HTML_EMAIL_FOOTER
   );
@@ -134,7 +134,7 @@ I look forward to hearing from you.
 
 Amara
 FutureX Investor Agent
-her@investfuturex.com
+amara@investfuturex.com
 
 ${TEXT_EMAIL_FOOTER}
   `;
@@ -174,7 +174,7 @@ export function getKYCApprovalEmailTemplate(params: {
       
       <p><strong>Amara</strong><br>
       FutureX Investor Agent<br>
-      <span class="gold">her@investfuturex.com</span></p>
+      <span class="gold">amara@investfuturex.com</span></p>
     `,
     HTML_EMAIL_FOOTER
   );
@@ -200,7 +200,7 @@ If you have any questions, just reply to this email or continue our conversation
 
 Amara
 FutureX Investor Agent
-her@investfuturex.com
+amara@investfuturex.com
 
 ${TEXT_EMAIL_FOOTER}
   `;
@@ -237,7 +237,7 @@ export function getDealRoomAccessEmailTemplate(params: {
 
       <p><strong>Amara</strong><br>
       FutureX Investor Agent<br>
-      <span class="gold">her@investfuturex.com</span></p>
+      <span class="gold">amara@investfuturex.com</span></p>
     `,
     HTML_EMAIL_FOOTER
   );
@@ -259,7 +259,7 @@ If anything is unclear, reply in the chat and Amara will guide you from there.
 
 Amara
 FutureX Investor Agent
-her@investfuturex.com
+amara@investfuturex.com
 
 ${TEXT_EMAIL_FOOTER}
   `;
@@ -377,6 +377,81 @@ Lead ID: ${params.leadId}
 Reason: ${params.reason}
 
 Open conversation: ${params.chatLink}
+
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
+export function getAdminKycSubmissionEmailTemplate(params: {
+  investorEmail: string;
+  leadId: string;
+  chatLink: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `New KYC submission ready for review: ${params.investorEmail}`;
+
+  const html = renderEmailLayout(
+    `
+      <h2>New KYC submission</h2>
+
+      <p>A qualified investor has completed KYC intake and is ready for human compliance review.</p>
+
+      <ul>
+        <li><strong>Investor:</strong> ${params.investorEmail}</li>
+        <li><strong>Lead ID:</strong> ${params.leadId}</li>
+      </ul>
+
+      <a href="${params.chatLink}" class="cta">Open Conversation →</a>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+New KYC submission
+
+Investor: ${params.investorEmail}
+Lead ID: ${params.leadId}
+
+Open conversation: ${params.chatLink}
+
+${TEXT_EMAIL_FOOTER}
+  `;
+
+  return { subject, html, text };
+}
+
+export function getKycRejectionEmailTemplate(params: {
+  investorName: string;
+  reason: string;
+}): { subject: string; html: string; text: string } {
+  const subject = 'KYC update: action required';
+
+  const html = renderEmailLayout(
+    `
+      <h2>Hello ${escapeHtml(params.investorName)},</h2>
+
+      <p>Your recent KYC submission needs another pass before our compliance team can approve it.</p>
+
+      <div class="alert">
+        <strong>Reason for rejection:</strong><br/>
+        ${escapeHtml(params.reason)}
+      </div>
+
+      <p>Please message Amara to restart the KYC process and resubmit your documents.</p>
+    `,
+    HTML_EMAIL_FOOTER
+  );
+
+  const text = `
+Hello ${params.investorName},
+
+Your recent KYC submission needs another pass before our compliance team can approve it.
+
+Reason for rejection:
+${params.reason}
+
+Please message Amara to restart the KYC process and resubmit your documents.
 
 ${TEXT_EMAIL_FOOTER}
   `;

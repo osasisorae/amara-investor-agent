@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
+  buildKycConsentData,
+  buildKycDocumentSelectorData,
   buildDealCardData,
   buildDocumentListData,
   buildDefaultComponentData,
-  buildKycPromptData,
+  buildKycPersonalDetailsData,
   buildPipelineStatusData,
+  buildKycSubmittedData,
+  buildKycUploadData,
   createComponentMetadata,
   getComponentFallbackText,
   isUIComponentType,
@@ -14,6 +18,7 @@ import {
 } from '@/lib/chat/components';
 import { AuditEventType, logAuditEvent } from '@/lib/db/audit';
 import { type Lead, type LeadStage, markLeadQualified, updateLead, updateLeadStage } from '@/lib/db/leads';
+import { hasAuditEventForLead } from '@/lib/db/kyc';
 import {
   type Message,
   getConversationHistory,
@@ -35,10 +40,15 @@ import {
   type QwenToolCall,
   type QwenToolChoice,
   type QwenToolDefinition,
-  callQwenWithSystemPrompt,
   createQwenChatCompletion,
 } from '@/lib/qwen/client';
 import { sendEmail } from '../email/resend-client';
+import { completeKycSubmission } from '@/lib/kyc/submission';
+import {
+  getKycDocumentLabel,
+  parseKycDocumentTypeFromMessage,
+  type KycPrimaryDocumentType,
+} from '@/lib/kyc/config';
 import { getSystemPromptForStage } from './prompts';
 import {
   assessQualificationResponse,
@@ -77,6 +87,9 @@ const AUDIT_EVENT_TYPES: AuditEventType[] = [
   'deal_room_email_sent',
   'deal_room_accessed',
   'human_review_requested',
+  'kyc_consent_given',
+  'kyc_personal_details_submitted',
+  'kyc_document_uploaded',
   'kyc_submitted',
   'kyc_approved',
   'kyc_rejected',
@@ -97,7 +110,11 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
       parameters: {
         type: 'object',
         properties: {
-          to: { type: 'string' },
+          to: {
+            type: 'string',
+            description:
+              'Use "investor" to email the lead or "admin" to email the FutureX team inbox.',
+          },
           subject: { type: 'string' },
           body: { type: 'string' },
         },
@@ -204,6 +221,11 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
               'document_list',
               'pipeline_status',
               'kyc_prompt',
+              'kyc_consent',
+              'kyc_personal_details',
+              'kyc_document_selector',
+              'kyc_upload',
+              'kyc_submitted',
               'guided_questions',
               'returns_table',
               'revenue_chart',
@@ -321,6 +343,15 @@ function getAllowedToolNamesForStage(stage: LeadStage): string[] {
         'send_email',
         'emit_ui_component',
       ];
+    case 'kyc_intake':
+      return [
+        'search_knowledge_base',
+        'emit_ui_component',
+        'update_lead_stage',
+        'log_audit_event',
+        'flag_for_human_review',
+        'send_email',
+      ];
     case 'agreement_pending':
       return ['unlock_agreement', 'log_audit_event', 'send_email'];
     default:
@@ -342,6 +373,18 @@ Operational rules:
 - If the investor clearly says they are ready to move forward, call \`log_audit_event\` with \`deal_room_accessed\`, then call \`update_lead_stage\` to \`kyc_intake\`. Do not send them to another page. Tell them they can upload documents right here in the chat.
 - Use \`emit_ui_component\` instead of narrating a dashboard. All UI appears as chat bubbles.
 - Keep answers concise and practical.
+`;
+  }
+
+  if (stage === 'kyc_intake') {
+    return `${getSystemPromptForStage('kyc_intake')}
+
+Operational rules:
+- Use \`emit_ui_component\` for every structured KYC step instead of describing forms in plain text.
+- If the investor asks an investment question during KYC, call \`search_knowledge_base\`, answer briefly from the result, then redirect them back to the KYC step they are currently on.
+- If you notify the FutureX team by email, use \`send_email\` with \`to: "admin"\`.
+- If you need to reassure the investor after submission, keep it concise and remind them the review window is 2 business days.
+- Never approve or reject KYC yourself.
 `;
   }
 
@@ -404,7 +447,7 @@ export class AgentOrchestrator {
       case 'deal_room':
         return this.handleDealRoomQuery(lead, investorMessage, context);
       case 'kyc_intake':
-        return this.handleKYCGuidance(lead, investorMessage);
+        return this.handleKYCGuidance(lead, investorMessage, context);
       case 'agreement_pending':
       case 'agreement_signed':
       case 'payment_pending':
@@ -752,23 +795,163 @@ export class AgentOrchestrator {
 
   private async handleKYCGuidance(
     lead: Lead,
-    message: string
+    message: string,
+    context: ProcessMessageContext
   ): Promise<HandlerResult> {
-    const conversationHistory = await getConversationHistory(lead.id);
-    const historyWithoutCurrentMessage = this.stripCurrentUserMessage(
-      conversationHistory,
-      message
-    );
-    const systemPrompt = getSystemPromptForStage('kyc_intake');
+    const normalizedMessage = message.trim().toLowerCase().replace(/[’]/g, "'");
 
-    const response = await callQwenWithSystemPrompt(
-      systemPrompt,
-      message,
-      historyWithoutCurrentMessage
-    );
+    if (normalizedMessage === 'i consent and want to proceed') {
+      return this.handleKycConsent(lead);
+    }
+
+    if (normalizedMessage === 'personal details submitted') {
+      return this.handleKycPersonalDetailsSubmitted(lead);
+    }
+
+    const selectedDocumentType = parseKycDocumentTypeFromMessage(message);
+    if (
+      selectedDocumentType &&
+      (normalizedMessage.startsWith("i'll use my") ||
+        normalizedMessage.startsWith('i will use my') ||
+        normalizedMessage.includes('use my'))
+    ) {
+      return this.handleKycDocumentSelection(lead, selectedDocumentType);
+    }
+
+    if (normalizedMessage === 'all documents uploaded') {
+      return this.handleKycSubmissionReady(lead, context);
+    }
+
+    return this.runToolConversation({
+      lead,
+      investorMessage: message,
+      stage: 'kyc_intake',
+      systemPrompt: buildToolPrompt('kyc_intake'),
+      context,
+      initialToolChoice: 'auto',
+    });
+  }
+
+  private async handleKycConsent(lead: Lead): Promise<HandlerResult> {
+    const alreadyLogged = await hasAuditEventForLead(lead.id, 'kyc_consent_given');
+
+    if (!alreadyLogged) {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: 'kyc_consent_given',
+      });
+    }
 
     return {
-      emissions: [this.emitTextMessage(response)],
+      emissions: [
+        this.emitTextMessage(
+          "Thanks. Let's capture your personal details first, then we'll move to the document uploads."
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_personal_details',
+          buildKycPersonalDetailsData({
+            fullLegalName: lead.full_name || '',
+            countryOfResidence: lead.country || '',
+            phoneNumber: lead.phone || '',
+          })
+        ),
+      ],
+    };
+  }
+
+  private async handleKycPersonalDetailsSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    return {
+      emissions: [
+        this.emitTextMessage(
+          'Great. Choose the government ID you want to use for this verification.'
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_document_selector',
+          buildKycDocumentSelectorData()
+        ),
+      ],
+    };
+  }
+
+  private async handleKycDocumentSelection(
+    lead: Lead,
+    documentType: KycPrimaryDocumentType | null
+  ): Promise<HandlerResult> {
+    if (!documentType) {
+      return {
+        emissions: [
+          this.emitTextMessage(
+            'I did not catch the document type. Please choose passport, national ID card, or driver’s licence.'
+          ),
+          this.emitComponentMessage(
+            lead.id,
+            'kyc_document_selector',
+            buildKycDocumentSelectorData()
+          ),
+        ],
+      };
+    }
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          `Perfect. Upload the files for your ${getKycDocumentLabel(
+            documentType
+          )} and the supporting compliance documents below.`
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_upload',
+          buildKycUploadData(documentType)
+        ),
+      ],
+    };
+  }
+
+  private async handleKycSubmissionReady(
+    lead: Lead,
+    context: ProcessMessageContext
+  ): Promise<HandlerResult> {
+    const result = await completeKycSubmission({
+      lead,
+      appUrl: normalizeOrigin(context.appUrl),
+    });
+
+    if (!result.valid) {
+      const missingItems = [
+        ...result.missingPersonalDetails,
+        ...result.missingDocuments,
+      ];
+
+      return {
+        emissions: [
+          this.emitTextMessage(
+            missingItems.length
+              ? `You're close, but I still need: ${missingItems.join(
+                  ', '
+                )}. Once those are in, tap Submit KYC again.`
+              : 'I still need your recorded consent before documents can be submitted. Please confirm the consent step first.'
+          ),
+        ],
+      };
+    }
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          "Thank you. Your KYC package has been submitted to the FutureX compliance team for review."
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_submitted',
+          buildKycSubmittedData()
+        ),
+      ],
+      shouldUpdateStage: 'pending_human_review',
     };
   }
 
@@ -968,13 +1151,22 @@ export class AgentOrchestrator {
         const to = this.requireString(args, 'to');
         const subject = this.requireString(args, 'subject');
         const body = this.requireString(args, 'body');
+        const resolvedRecipient =
+          to === 'investor'
+            ? lead.email
+            : to === 'admin'
+              ? ADMIN_ALERT_EMAIL
+              : to;
 
-        if (to !== lead.email && to !== ADMIN_ALERT_EMAIL) {
+        if (
+          resolvedRecipient !== lead.email &&
+          resolvedRecipient !== ADMIN_ALERT_EMAIL
+        ) {
           throw new Error('send_email recipient is outside the allowed set');
         }
 
         await sendEmail({
-          to,
+          to: resolvedRecipient,
           subject,
           html: formatEmailBodyAsHtml(body),
           text: body,
@@ -983,7 +1175,7 @@ export class AgentOrchestrator {
         return {
           content: JSON.stringify({
             success: true,
-            to,
+            to: resolvedRecipient,
             subject,
             delivery: 'queued',
           }),
@@ -1195,9 +1387,13 @@ export class AgentOrchestrator {
       );
     }
 
-    if (!this.hasComponentEmission(pendingEmissions, 'kyc_prompt')) {
+    if (!this.hasComponentEmission(pendingEmissions, 'kyc_consent')) {
       emissions.push(
-        this.emitComponentMessage(leadId, 'kyc_prompt', buildKycPromptData())
+        this.emitComponentMessage(
+          leadId,
+          'kyc_consent',
+          buildKycConsentData()
+        )
       );
     }
   }

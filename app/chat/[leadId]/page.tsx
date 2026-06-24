@@ -10,7 +10,12 @@ import type {
   DocumentListComponentData,
   ExitCardComponentData,
   GuidedQuestionsComponentData,
+  KycConsentComponentData,
+  KycDocumentSelectorComponentData,
+  KycPersonalDetailsComponentData,
   KycPromptComponentData,
+  KycSubmittedComponentData,
+  KycUploadComponentData,
   OwnershipCardComponentData,
   PipelineStatusComponentData,
   ReturnsTableComponentData,
@@ -25,6 +30,11 @@ import { ReturnsTable } from '@/components/deal-room/ReturnsTable';
 import { RevenueChart } from '@/components/deal-room/RevenueChart';
 import { RiskTable } from '@/components/deal-room/RiskTable';
 import { TimelineCard } from '@/components/deal-room/TimelineCard';
+import { KYCConsentCard } from '@/components/deal-room/kyc/KYCConsentCard';
+import { KYCDocumentSelectorCard } from '@/components/deal-room/kyc/KYCDocumentSelectorCard';
+import { KYCPersonalDetailsCard } from '@/components/deal-room/kyc/KYCPersonalDetailsCard';
+import { KYCSubmittedCard } from '@/components/deal-room/kyc/KYCSubmittedCard';
+import { KYCUploadCard } from '@/components/deal-room/kyc/KYCUploadCard';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
 
@@ -203,6 +213,8 @@ export default function ChatPage() {
   const { notify } = useFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasCompletedInitialScrollRef = useRef(false);
+  const previousLatestMessageKeyRef = useRef<string | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [lead, setLead] = useState<Lead | null>(null);
@@ -213,12 +225,47 @@ export default function ChatPage() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
+    hasCompletedInitialScrollRef.current = false;
+    previousLatestMessageKeyRef.current = null;
+    setLoading(true);
     loadChat();
   }, [leadId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (loading) {
+      return;
+    }
+
+    const latestMessage = messages.at(-1);
+    const latestMessageKey = latestMessage
+      ? `${latestMessage.id}:${latestMessage.type}`
+      : `empty:${messages.length}`;
+    const isUiComponentMessage =
+      latestMessage?.role === 'agent' && latestMessage.type !== 'text';
+    const isInitialScroll = !hasCompletedInitialScrollRef.current;
+
+    if (isInitialScroll) {
+      hasCompletedInitialScrollRef.current = true;
+    } else if (previousLatestMessageKeyRef.current === latestMessageKey) {
+      return;
+    }
+
+    previousLatestMessageKeyRef.current = latestMessageKey;
+
+    const timeout = window.setTimeout(
+      () => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: isInitialScroll
+            ? ('instant' as ScrollBehavior)
+            : 'smooth',
+          block: 'end',
+        });
+      },
+      isUiComponentMessage ? 100 : 0
+    );
+
+    return () => window.clearTimeout(timeout);
+  }, [loading, messages]);
 
   const starterPrompts = useMemo(
     () => getStarterPrompts(lead?.stage || 'outreach_sent'),
@@ -531,6 +578,48 @@ export default function ChatPage() {
       case 'kyc_prompt':
         return renderKycPrompt(
           message.metadata?.data as KycPromptComponentData
+        );
+      case 'kyc_consent':
+        return (
+          <KYCConsentCard
+            leadId={leadId}
+            data={message.metadata?.data as KycConsentComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_personal_details':
+        return (
+          <KYCPersonalDetailsCard
+            leadId={leadId}
+            data={message.metadata?.data as KycPersonalDetailsComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_document_selector':
+        return (
+          <KYCDocumentSelectorCard
+            leadId={leadId}
+            data={message.metadata?.data as KycDocumentSelectorComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_upload':
+        return (
+          <KYCUploadCard
+            leadId={leadId}
+            data={message.metadata?.data as KycUploadComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_submitted':
+        return (
+          <KYCSubmittedCard
+            data={message.metadata?.data as KycSubmittedComponentData}
+          />
         );
       case 'guided_questions':
         return (

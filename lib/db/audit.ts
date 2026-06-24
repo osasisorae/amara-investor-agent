@@ -10,6 +10,9 @@ export type AuditEventType =
   | 'deal_room_email_sent'
   | 'deal_room_accessed'
   | 'human_review_requested'
+  | 'kyc_consent_given'
+  | 'kyc_personal_details_submitted'
+  | 'kyc_document_uploaded'
   | 'kyc_submitted'
   | 'kyc_approved'
   | 'kyc_rejected'
@@ -32,7 +35,7 @@ export interface AuditEvent {
 export async function logAuditEvent(data: {
   leadId: string;
   eventType: AuditEventType;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
 }): Promise<void> {

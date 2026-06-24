@@ -212,6 +212,21 @@ export async function rejectKYC(leadId: string): Promise<void> {
   );
 }
 
+export async function returnKYCToIntake(leadId: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await execute(
+    `UPDATE leads SET
+      kyc_approved = 0,
+      kyc_submitted_at = NULL,
+      kyc_reviewed_at = ?,
+      approved_by = NULL,
+      stage = 'kyc_intake',
+      updated_at = ?
+     WHERE id = ?`,
+    [now, now, leadId]
+  );
+}
+
 export async function markLeadQualified(leadId: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   await execute(

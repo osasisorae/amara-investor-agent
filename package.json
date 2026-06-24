@@ -11,6 +11,8 @@
     "db:migrate": "node scripts/migrate.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@libsql/client": "^0.6.0",
     "@vercel/blob": "^0.22.3",
     "date-fns": "^3.6.0",

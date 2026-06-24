@@ -43,6 +43,22 @@ export async function getMessagesByLeadId(leadId: string): Promise<Message[]> {
   );
 }
 
+export async function getRecentMessagesByLeadId(
+  leadId: string,
+  limit = 10
+): Promise<Message[]> {
+  const results = await query<Message>(
+    `SELECT *
+     FROM messages
+     WHERE lead_id = ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [leadId, limit]
+  );
+
+  return [...results].reverse();
+}
+
 export async function getConversationHistory(
   leadId: string
 ): Promise<Array<{ role: 'assistant' | 'user'; content: string }>> {

@@ -17,6 +17,11 @@ import {
   buildRiskTableData,
   buildTimelineCardData,
 } from '@/lib/knowledge-base/deal-room-data';
+import {
+  getKycDocumentLabel,
+  KYC_DOCUMENT_OPTIONS,
+  type KycPrimaryDocumentType,
+} from '@/lib/kyc/config';
 
 export type AgentMessageType =
   | 'text'
@@ -24,6 +29,11 @@ export type AgentMessageType =
   | 'document_list'
   | 'pipeline_status'
   | 'kyc_prompt'
+  | 'kyc_consent'
+  | 'kyc_personal_details'
+  | 'kyc_document_selector'
+  | 'kyc_upload'
+  | 'kyc_submitted'
   | 'guided_questions'
   | 'returns_table'
   | 'revenue_chart'
@@ -79,6 +89,45 @@ export interface KycPromptComponentData {
 export interface GuidedQuestionsComponentData {
   title: string;
   questions: string[];
+}
+
+export interface KycConsentComponentData {
+  title: string;
+  items: Array<{
+    label: string;
+    value: string;
+  }>;
+  proceedLabel: string;
+  questionsLabel: string;
+}
+
+export interface KycPersonalDetailsComponentData {
+  title: string;
+  fullLegalName?: string;
+  dateOfBirth?: string;
+  nationality?: string;
+  countryOfResidence?: string;
+  phoneNumber?: string;
+}
+
+export interface KycDocumentSelectorComponentData {
+  title: string;
+  options: Array<{
+    value: KycPrimaryDocumentType;
+    label: string;
+  }>;
+}
+
+export interface KycUploadComponentData {
+  title: string;
+  documentType: KycPrimaryDocumentType;
+  documentTypeLabel: string;
+}
+
+export interface KycSubmittedComponentData {
+  title: string;
+  description: string;
+  reviewWindowLabel: string;
 }
 
 export interface ReturnsTableComponentData {
@@ -167,6 +216,11 @@ export interface UIComponentDataMap {
   document_list: DocumentListComponentData;
   pipeline_status: PipelineStatusComponentData;
   kyc_prompt: KycPromptComponentData;
+  kyc_consent: KycConsentComponentData;
+  kyc_personal_details: KycPersonalDetailsComponentData;
+  kyc_document_selector: KycDocumentSelectorComponentData;
+  kyc_upload: KycUploadComponentData;
+  kyc_submitted: KycSubmittedComponentData;
   guided_questions: GuidedQuestionsComponentData;
   returns_table: ReturnsTableComponentData;
   revenue_chart: RevenueChartComponentData;
@@ -202,6 +256,11 @@ export function isUIComponentType(value: string): value is UIComponentType {
     value === 'document_list' ||
     value === 'pipeline_status' ||
     value === 'kyc_prompt' ||
+    value === 'kyc_consent' ||
+    value === 'kyc_personal_details' ||
+    value === 'kyc_document_selector' ||
+    value === 'kyc_upload' ||
+    value === 'kyc_submitted' ||
     value === 'guided_questions' ||
     value === 'returns_table' ||
     value === 'revenue_chart' ||
@@ -268,6 +327,73 @@ export function buildKycPromptData(): KycPromptComponentData {
   };
 }
 
+export function buildKycConsentData(): KycConsentComponentData {
+  return {
+    title: 'Before we proceed — your data rights',
+    items: [
+      {
+        label: 'What is collected',
+        value:
+          'Full name, government ID, proof of address, and source of funds.',
+      },
+      {
+        label: 'Why',
+        value: 'ISA 2025 compliance and investor verification.',
+      },
+      {
+        label: 'Who processes it',
+        value:
+          'FutureX Nexus Development Limited plus a human compliance officer. AI performs intake only — a human makes the final decision.',
+      },
+      {
+        label: 'Cross-border transfer',
+        value: 'Data may be processed outside Nigeria.',
+      },
+    ],
+    proceedLabel: 'I consent and want to proceed',
+    questionsLabel: 'I have questions first',
+  };
+}
+
+export function buildKycPersonalDetailsData(
+  defaults: Partial<KycPersonalDetailsComponentData> = {}
+): KycPersonalDetailsComponentData {
+  return {
+    title: 'Tell us about yourself',
+    fullLegalName: defaults.fullLegalName || '',
+    dateOfBirth: defaults.dateOfBirth || '',
+    nationality: defaults.nationality || '',
+    countryOfResidence: defaults.countryOfResidence || '',
+    phoneNumber: defaults.phoneNumber || '',
+  };
+}
+
+export function buildKycDocumentSelectorData(): KycDocumentSelectorComponentData {
+  return {
+    title: 'Choose the ID you want to use for verification',
+    options: [...KYC_DOCUMENT_OPTIONS],
+  };
+}
+
+export function buildKycUploadData(
+  documentType: KycPrimaryDocumentType = 'passport'
+): KycUploadComponentData {
+  return {
+    title: 'Upload your KYC documents',
+    documentType,
+    documentTypeLabel: getKycDocumentLabel(documentType),
+  };
+}
+
+export function buildKycSubmittedData(): KycSubmittedComponentData {
+  return {
+    title: 'Documents submitted',
+    description:
+      "A member of our compliance team will review your documents within 2 business days. You'll receive an email when your review is complete.",
+    reviewWindowLabel: '2 business days',
+  };
+}
+
 export function buildDefaultComponentData(
   component: UIComponentType,
   currentStage: LeadStage
@@ -281,6 +407,16 @@ export function buildDefaultComponentData(
       return buildPipelineStatusData(currentStage);
     case 'kyc_prompt':
       return buildKycPromptData();
+    case 'kyc_consent':
+      return buildKycConsentData();
+    case 'kyc_personal_details':
+      return buildKycPersonalDetailsData();
+    case 'kyc_document_selector':
+      return buildKycDocumentSelectorData();
+    case 'kyc_upload':
+      return buildKycUploadData();
+    case 'kyc_submitted':
+      return buildKycSubmittedData();
     case 'guided_questions':
       return buildGuidedQuestionsData();
     case 'returns_table':
@@ -320,6 +456,16 @@ export function getComponentFallbackText(
       return '[ui:pipeline_status] Pipeline progress';
     case 'kyc_prompt':
       return '[ui:kyc_prompt] KYC document upload';
+    case 'kyc_consent':
+      return '[ui:kyc_consent] KYC consent';
+    case 'kyc_personal_details':
+      return '[ui:kyc_personal_details] KYC personal details';
+    case 'kyc_document_selector':
+      return '[ui:kyc_document_selector] KYC document selector';
+    case 'kyc_upload':
+      return '[ui:kyc_upload] KYC upload';
+    case 'kyc_submitted':
+      return '[ui:kyc_submitted] KYC submitted';
     case 'guided_questions':
       return '[ui:guided_questions] Due diligence prompts';
     case 'returns_table':
