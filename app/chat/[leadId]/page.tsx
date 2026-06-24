@@ -764,12 +764,12 @@ export default function ChatPage() {
       <main className="min-h-0 flex-1 overflow-hidden">
         <div className="h-full overflow-y-auto overscroll-contain">
           <div
-            className="mx-auto flex min-h-full w-full max-w-4xl flex-col justify-end px-6 pt-8"
+            className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pt-8"
             style={{
               paddingBottom: composerHeight > 0 ? composerHeight + 32 : 200,
             }}
           >
-            <div className="space-y-4">
+            <div className="mt-auto space-y-4">
               {messages.map((message) => (
                 <div
                   key={message.id}

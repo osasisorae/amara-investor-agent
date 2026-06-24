@@ -72,15 +72,20 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
+  const { leadId } = params;
+  
   try {
-    const { leadId } = params;
+    console.log('[KYC Upload] Starting upload for lead:', leadId);
+    
     const lead = await getLeadById(leadId);
 
     if (!lead) {
+      console.log('[KYC Upload] Lead not found:', leadId);
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
     if (lead.stage !== 'kyc_intake') {
+      console.log('[KYC Upload] Invalid stage:', lead.stage);
       return NextResponse.json(
         { error: 'Lead is not in KYC intake stage' },
         { status: 400 }
@@ -89,6 +94,7 @@ export async function POST(
 
     const hasConsent = await hasAuditEventForLead(leadId, 'kyc_consent_given');
     if (!hasConsent) {
+      console.log('[KYC Upload] No consent found for lead:', leadId);
       return NextResponse.json(
         { error: 'Consent must be recorded before document upload' },
         { status: 400 }
@@ -104,7 +110,10 @@ export async function POST(
         : ''
     );
 
+    console.log('[KYC Upload] docType:', docType, 'selectedDocumentType:', selectedDocumentType);
+
     if (!(fileEntry instanceof File) || !docType) {
+      console.log('[KYC Upload] Invalid file or docType');
       return NextResponse.json(
         { error: 'File and valid document type are required' },
         { status: 400 }
@@ -112,6 +121,7 @@ export async function POST(
     }
 
     if (docType.startsWith('document_') && !selectedDocumentType) {
+      console.log('[KYC Upload] Missing document type selection');
       return NextResponse.json(
         { error: 'A government ID type must be selected first' },
         { status: 400 }
@@ -119,6 +129,7 @@ export async function POST(
     }
 
     if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
+      console.log('[KYC Upload] File too large:', fileEntry.size);
       return NextResponse.json(
         { error: 'Files must be 5MB or smaller' },
         { status: 400 }
@@ -130,6 +141,7 @@ export async function POST(
       !extension ||
       (fileEntry.type && !ALLOWED_MIME_TYPES.has(fileEntry.type))
     ) {
+      console.log('[KYC Upload] Invalid file type:', fileEntry.type, extension);
       return NextResponse.json(
         { error: 'Only JPG, JPEG, PNG, and PDF files are allowed' },
         { status: 400 }
@@ -144,7 +156,14 @@ export async function POST(
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
     const contentType = fileEntry.type || getContentType(extension);
 
+    console.log('[KYC Upload] Uploading to R2:', filename);
+    console.log('[KYC Upload] R2 Config check - Endpoint:', process.env.R2_ENDPOINT ? 'SET' : 'MISSING');
+    console.log('[KYC Upload] R2 Config check - Access Key:', process.env.R2_ACCESS_KEY_ID ? 'SET' : 'MISSING');
+    console.log('[KYC Upload] R2 Config check - Secret:', process.env.R2_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+    console.log('[KYC Upload] R2 Config check - Bucket:', process.env.R2_BUCKET_NAME ? 'SET' : 'MISSING');
+
     const storedFilename = await uploadFile(buffer, filename, contentType);
+    console.log('[KYC Upload] Successfully uploaded:', storedFilename);
 
     await saveKycDocument({
       leadId,
@@ -162,13 +181,20 @@ export async function POST(
       },
     });
 
+    console.log('[KYC Upload] Complete for lead:', leadId);
     return NextResponse.json({
       filename: storedFilename,
     });
   } catch (error) {
-    console.error('Error uploading KYC document:', error);
+    console.error('[KYC Upload] Error uploading KYC document for lead:', leadId);
+    console.error('[KYC Upload] Error details:', error);
+    console.error('[KYC Upload] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    
     return NextResponse.json(
-      { error: 'Failed to upload document' },
+      { 
+        error: 'Failed to upload document',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
