@@ -44,7 +44,8 @@ export type AgentMessageType =
   | 'ownership_card'
   | 'risk_table'
   | 'timeline_card'
-  | 'exit_card';
+  | 'exit_card'
+  | 'agreement_ready';
 
 export type UIComponentType = Exclude<AgentMessageType, 'text'>;
 
@@ -255,6 +256,11 @@ export interface ExitCardComponentData {
   }>;
 }
 
+export interface AgreementReadyComponentData {
+  agreementUrl: string;
+  spvName: string;
+}
+
 export interface UIComponentDataMap {
   deal_card: DealCardComponentData;
   document_list: DocumentListComponentData;
@@ -274,6 +280,7 @@ export interface UIComponentDataMap {
   risk_table: RiskTableComponentData;
   timeline_card: TimelineCardComponentData;
   exit_card: ExitCardComponentData;
+  agreement_ready: AgreementReadyComponentData;
 }
 
 export type UIComponentMetadata<T extends UIComponentType = UIComponentType> = {
@@ -315,7 +322,8 @@ export function isUIComponentType(value: string): value is UIComponentType {
     value === 'ownership_card' ||
     value === 'risk_table' ||
     value === 'timeline_card' ||
-    value === 'exit_card'
+    value === 'exit_card' ||
+    value === 'agreement_ready'
   );
 }
 
@@ -450,6 +458,13 @@ export function buildSpvStructureComponentData(): SpvStructureCardComponentData 
   return buildSpvStructureData();
 }
 
+export function buildAgreementReadyData(): AgreementReadyComponentData {
+  return {
+    agreementUrl: '',
+    spvName: SPV_NAME,
+  };
+}
+
 export function buildDefaultComponentData(
   component: UIComponentType,
   currentStage: LeadStage
@@ -491,6 +506,8 @@ export function buildDefaultComponentData(
       return buildTimelineCardData();
     case 'exit_card':
       return buildExitCardData();
+    case 'agreement_ready':
+      return buildAgreementReadyData();
   }
 }
 
@@ -544,6 +561,8 @@ export function getComponentFallbackText(
       return '[ui:timeline_card] Project timeline';
     case 'exit_card':
       return '[ui:exit_card] Year 5 exit';
+    case 'agreement_ready':
+      return '[ui:agreement_ready] Agreement ready';
   }
 }
 

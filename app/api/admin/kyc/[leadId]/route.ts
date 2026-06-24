@@ -1,6 +1,12 @@
+import { nanoid } from 'nanoid';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminSession } from '@/lib/admin-auth';
+import {
+  buildPipelineStatusData,
+  createComponentMetadata,
+} from '@/lib/chat/components';
 import { logAuditEvent } from '@/lib/db/audit';
+import { execute } from '@/lib/db/client';
 import { getKycDocumentsByLeadId, deleteKycDocumentsByLeadId } from '@/lib/db/kyc';
 import {
   approveKYC,
@@ -139,6 +145,55 @@ export async function POST(
 
     if (decision === 'approved' || decision === 'approve') {
       await approveKYC(leadId, approvedBy);
+
+      const firstMessageTimestamp = Math.floor(Date.now() / 1000);
+      const textMessageId = nanoid();
+      const pipelineMessageId = nanoid();
+      const componentMessageId = nanoid();
+      const pipelineStatusMetadata = JSON.stringify(
+        createComponentMetadata(
+          'pipeline_status',
+          buildPipelineStatusData('agreement_pending')
+        )
+      );
+      const agreementReadyMetadata = JSON.stringify({
+        component: 'agreement_ready',
+        data: {
+          agreementUrl: `/agreement/${leadId}`,
+          spvName: 'Akwa Ibom Hospitality SPV',
+        },
+      });
+
+      await execute(
+        `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+         VALUES (?, ?, 'agent', ?, NULL, ?)`,
+        [
+          textMessageId,
+          leadId,
+          'Great news — your identity has been verified by our compliance team. You are now cleared to review and sign your investment agreement.',
+          firstMessageTimestamp,
+        ]
+      );
+      await execute(
+        `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+         VALUES (?, ?, 'agent', '', ?, ?)`,
+        [
+          pipelineMessageId,
+          leadId,
+          pipelineStatusMetadata,
+          firstMessageTimestamp + 1,
+        ]
+      );
+      await execute(
+        `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+         VALUES (?, ?, 'agent', '', ?, ?)`,
+        [
+          componentMessageId,
+          leadId,
+          agreementReadyMetadata,
+          firstMessageTimestamp + 2,
+        ]
+      );
 
       await logAuditEvent({
         leadId,

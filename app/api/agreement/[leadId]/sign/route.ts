@@ -12,6 +12,7 @@ import {
   markAgreementSigned,
   updateLead,
 } from '@/lib/db/leads';
+import { saveMessage } from '@/lib/db/messages';
 import { consumeOtpCode } from '@/lib/db/otp';
 import {
   resolveCommitmentLabel,
@@ -102,6 +103,7 @@ export async function POST(
       eventType: 'agreement_signed',
       metadata: {
         typed_name: fullName,
+        signed_at: signedAt,
         otp_verified_at: signedAt,
         otp_issued_at: otpRecord.created_at,
         agreement_version: AGREEMENT_VERSION,
@@ -130,6 +132,17 @@ export async function POST(
           ? paymentError.message
           : 'Payment instructions could not be sent automatically.';
     }
+
+    await saveMessage({
+      leadId,
+      role: 'agent',
+      content:
+        nextStage === 'payment_pending'
+          ? `Your agreement has been signed successfully. Payment instructions have been emailed to you${
+              paymentReference ? ` with reference ${paymentReference}` : ''
+            }.`
+          : 'Your agreement has been signed successfully. A FutureX team member will share payment instructions with you directly.',
+    });
 
     return NextResponse.json({
       success: true,

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { nanoid } from 'nanoid';
 import { toChatMessages } from '@/lib/chat/messages';
 import { getLeadById } from '@/lib/db/leads';
 import { getMessagesByLeadId } from '@/lib/db/messages';
+import { execute } from '@/lib/db/client';
 import {
   getLatestQualificationAnswerMap,
 } from '@/lib/db/qualification';
@@ -10,6 +12,11 @@ import {
   type QualificationQuestion,
 } from '@/lib/agent/qualification';
 import { orchestrator } from '@/lib/agent/orchestrator';
+import {
+  buildPipelineStatusData,
+  createComponentMetadata,
+  parseUIComponentMetadata,
+} from '@/lib/chat/components';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getDealRoomAccessEmailTemplate } from '@/lib/email/templates';
 import { logAuditEvent } from '@/lib/db/audit';
@@ -23,6 +30,9 @@ const BINARY_QUALIFICATION_QUESTIONS = new Set<QualificationQuestion>([
   'ticket_size',
   'kyc_willingness',
 ]);
+
+const AGREEMENT_APPROVAL_TEXT =
+  'Great news — your identity has been verified by our compliance team. You are now cleared to review and sign your investment agreement.';
 
 async function getQualificationState(
   leadId: string,
@@ -51,6 +61,104 @@ async function getQualificationState(
   };
 }
 
+async function ensureAgreementReadyMessages(lead: Awaited<ReturnType<typeof getLeadById>>) {
+  if (
+    !lead ||
+    lead.stage !== 'agreement_pending' ||
+    lead.kyc_approved !== 1 ||
+    !lead.approved_by
+  ) {
+    return;
+  }
+
+  const messages = await getMessagesByLeadId(lead.id);
+  const hasApprovalText = messages.some(
+    (message) =>
+      message.role === 'agent' && message.content === AGREEMENT_APPROVAL_TEXT
+  );
+  const hasAgreementReadyCard = messages.some((message) => {
+    if (message.role !== 'agent' || !message.metadata) {
+      return false;
+    }
+
+    return parseUIComponentMetadata(message.metadata)?.component === 'agreement_ready';
+  });
+  const hasAgreementPipelineStatus = messages.some((message) => {
+    if (message.role !== 'agent' || !message.metadata) {
+      return false;
+    }
+
+    const componentMetadata = parseUIComponentMetadata(message.metadata);
+
+    if (componentMetadata?.component !== 'pipeline_status') {
+      return false;
+    }
+
+    const pipelineData = componentMetadata.data as {
+      currentStage?: string;
+    };
+
+    return pipelineData.currentStage === 'agreement_pending';
+  });
+
+  if (hasApprovalText && hasAgreementReadyCard && hasAgreementPipelineStatus) {
+    return;
+  }
+
+  let nextCreatedAt = Math.max(
+    lead.kyc_reviewed_at ?? 0,
+    messages.at(-1)?.created_at ?? 0
+  );
+
+  if (!hasApprovalText) {
+    nextCreatedAt += 1;
+    await execute(
+      `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+       VALUES (?, ?, 'agent', ?, NULL, ?)`,
+      [nanoid(), lead.id, AGREEMENT_APPROVAL_TEXT, nextCreatedAt]
+    );
+  }
+
+  if (!hasAgreementReadyCard) {
+    nextCreatedAt += 1;
+    await execute(
+      `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+       VALUES (?, ?, 'agent', '', ?, ?)`,
+      [
+        nanoid(),
+        lead.id,
+        JSON.stringify({
+          component: 'agreement_ready',
+          data: {
+            agreementUrl: `/agreement/${lead.id}`,
+            spvName: 'Akwa Ibom Hospitality SPV',
+          },
+        }),
+        nextCreatedAt,
+      ]
+    );
+  }
+
+  if (!hasAgreementPipelineStatus) {
+    nextCreatedAt += 1;
+    await execute(
+      `INSERT INTO messages (id, lead_id, role, content, metadata, created_at)
+       VALUES (?, ?, 'agent', '', ?, ?)`,
+      [
+        nanoid(),
+        lead.id,
+        JSON.stringify(
+          createComponentMetadata(
+            'pipeline_status',
+            buildPipelineStatusData('agreement_pending')
+          )
+        ),
+        nextCreatedAt,
+      ]
+    );
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { leadId: string } }
@@ -63,6 +171,7 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
+    await ensureAgreementReadyMessages(lead);
     const messages = await getMessagesByLeadId(leadId);
     const qualificationState = await getQualificationState(leadId, lead.stage);
 

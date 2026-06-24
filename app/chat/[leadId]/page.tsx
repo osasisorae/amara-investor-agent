@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import type { ChatMessage } from '@/lib/chat/messages';
 import type { LeadStage } from '@/lib/db/leads';
 import type {
+  AgreementReadyComponentData,
   DealBriefCardComponentData,
   DealCardComponentData,
   DocumentListComponentData,
@@ -25,6 +26,7 @@ import type {
   SpvStructureCardComponentData,
   TimelineCardComponentData,
 } from '@/lib/chat/components';
+import { AgreementReadyCard } from '@/components/deal-room/AgreementReadyCard';
 import { DealBriefCard } from '@/components/deal-room/DealBriefCard';
 import { ExitCard } from '@/components/deal-room/ExitCard';
 import { GuidedQuestionChips } from '@/components/deal-room/GuidedQuestionChips';
@@ -309,6 +311,86 @@ export default function ChatPage() {
 
     return () => window.clearTimeout(timeout);
   }, [loading, messages]);
+
+  useEffect(() => {
+    if (!lead || lead.stage !== 'pending_human_review') {
+      return;
+    }
+
+    let cancelled = false;
+    let polling = false;
+
+    const pollMessages = async () => {
+      if (cancelled || polling) {
+        return;
+      }
+
+      polling = true;
+
+      try {
+        const response = await fetch(`/api/chat/${leadId}/messages`, {
+          cache: 'no-store',
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error('Failed to poll chat messages:', data.error);
+          return;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextMessages = Array.isArray(data.messages) ? data.messages : [];
+        const nextLead = data.lead || null;
+
+        setMessages((current) => {
+          const currentLastId = current.at(-1)?.id;
+          const nextLastId = nextMessages.at(-1)?.id;
+
+          if (
+            current.length === nextMessages.length &&
+            currentLastId === nextLastId
+          ) {
+            return current;
+          }
+
+          return nextMessages;
+        });
+
+        if (nextLead?.stage) {
+          setLead((current) =>
+            current
+              ? current.stage === nextLead.stage &&
+                (nextLead.kyc_submitted_at ?? current.kyc_submitted_at) ===
+                  current.kyc_submitted_at
+                ? current
+                : {
+                    ...current,
+                    stage: nextLead.stage,
+                    kyc_submitted_at:
+                      nextLead.kyc_submitted_at ?? current.kyc_submitted_at,
+                  }
+              : current
+          );
+        }
+      } catch (error) {
+        console.error('Failed to poll chat messages:', error);
+      } finally {
+        polling = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void pollMessages();
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [lead?.stage, leadId]);
 
   const starterPrompts = useMemo(
     () => getStarterPrompts(lead?.stage || 'outreach_sent'),
@@ -609,6 +691,12 @@ export default function ChatPage() {
       case 'deal_card':
         return renderDealCard(
           message.metadata?.data as DealCardComponentData
+        );
+      case 'agreement_ready':
+        return (
+          <AgreementReadyCard
+            data={message.metadata?.data as AgreementReadyComponentData}
+          />
         );
       case 'document_list':
         return renderDocumentList(
