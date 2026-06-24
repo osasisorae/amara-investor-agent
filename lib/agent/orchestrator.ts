@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
   buildDealCardData,
+  buildDocumentListData,
   buildDefaultComponentData,
   buildKycPromptData,
   buildPipelineStatusData,
   createComponentMetadata,
   getComponentFallbackText,
   isUIComponentType,
+  parseUIComponentMetadata,
   type UIComponentDataMap,
   type UIComponentType,
 } from '@/lib/chat/components';
@@ -15,6 +17,7 @@ import { type Lead, type LeadStage, markLeadQualified, updateLead, updateLeadSta
 import {
   type Message,
   getConversationHistory,
+  getMessagesByLeadId,
   saveMessage,
 } from '@/lib/db/messages';
 import {
@@ -22,6 +25,10 @@ import {
   saveQualificationAnswer,
 } from '@/lib/db/qualification';
 import { getAdminHumanReviewEmailTemplate } from '@/lib/email/templates';
+import {
+  buildGuidedDealRoomAnswer,
+  buildGuidedQuestionsData,
+} from '@/lib/knowledge-base/deal-room-data';
 import { searchKnowledgeBaseStructured } from '@/lib/knowledge-base/loader';
 import {
   type QwenConversationMessage,
@@ -197,6 +204,13 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
               'document_list',
               'pipeline_status',
               'kyc_prompt',
+              'guided_questions',
+              'returns_table',
+              'revenue_chart',
+              'ownership_card',
+              'risk_table',
+              'timeline_card',
+              'exit_card',
             ],
           },
           data: {
@@ -321,6 +335,7 @@ function buildToolPrompt(stage: LeadStage): string {
 Operational rules:
 - For every investor question in the deal room, call \`search_knowledge_base\` before giving a final answer.
 - Use only the search result to answer due diligence questions. Do not invent facts.
+- If the investor asks for return breakdowns, ownership, revenue model, risks, timeline, or Year 5 exit mechanics, use \`emit_ui_component\` with the matching structured component instead of replying with plain text alone.
 - If the investor asks for documents, downloads, or wants source materials, call \`emit_ui_component\` with \`component: "document_list"\`.
 - If you answer a substantive due diligence question and there is no previous assistant message containing \`[ui:document_list]\`, proactively emit \`document_list\` once after your answer.
 - If the search result shows no relevant answer, call \`flag_for_human_review\` with a concise reason, then tell the investor: "That's a great question that needs a direct answer from our team. I've flagged it for follow-up."
@@ -562,6 +577,65 @@ export class AgentOrchestrator {
     message: string,
     context: ProcessMessageContext
   ): Promise<HandlerResult> {
+    const guidedAnswer = buildGuidedDealRoomAnswer(message);
+
+    if (guidedAnswer) {
+      const emissions: AgentEmission[] = [
+        this.emitTextMessage(guidedAnswer.text),
+      ];
+
+      if (guidedAnswer.component) {
+        emissions.push(
+          this.emitComponentMessage(
+            lead.id,
+            guidedAnswer.component.type,
+            guidedAnswer.component.data
+          )
+        );
+      }
+
+      await this.maybeAppendDealRoomDocuments(lead.id, emissions);
+
+      return { emissions };
+    }
+
+    if (this.isDocumentRequest(message)) {
+      return {
+        emissions: [
+          this.emitTextMessage(
+            "I've pulled the two core diligence documents into the chat so you can review the structure and deal summary directly."
+          ),
+          this.emitComponentMessage(
+            lead.id,
+            'document_list',
+            buildDocumentListData()
+          ),
+        ],
+      };
+    }
+
+    const kbSearch = searchKnowledgeBaseStructured(message);
+    const shouldEscalate =
+      !kbSearch.found && this.isLikelyDealRoomKnowledgeQuestion(message);
+
+    if (shouldEscalate) {
+      const escalationReason = `No approved knowledge-base answer for deal-room question: ${message}`;
+      const escalationResult = await this.flagLeadForHumanReview(
+        lead,
+        escalationReason,
+        normalizeOrigin(context.appUrl)
+      );
+
+      return {
+        emissions: [
+          this.emitTextMessage(
+            "That's a great question that needs a direct answer from our team. I've flagged it for follow-up."
+          ),
+        ],
+        shouldUpdateStage: escalationResult.stageChange,
+      };
+    }
+
     return this.runToolConversation({
       lead,
       investorMessage: message,
@@ -573,6 +647,107 @@ export class AgentOrchestrator {
         function: { name: 'search_knowledge_base' },
       },
     });
+  }
+
+  private isDocumentRequest(message: string): boolean {
+    const normalized = message.toLowerCase();
+
+    return (
+      normalized.includes('document') ||
+      normalized.includes('download') ||
+      normalized.includes('deal brief') ||
+      normalized.includes('spv structure') ||
+      normalized.includes('source material') ||
+      normalized.includes('diligence pack')
+    );
+  }
+
+  private isLikelyDealRoomKnowledgeQuestion(message: string): boolean {
+    const normalized = message.toLowerCase().trim();
+
+    if (!normalized) {
+      return false;
+    }
+
+    if (
+      [
+        'hi',
+        'hello',
+        'hey',
+        'thanks',
+        'thank you',
+        'okay',
+        'ok',
+        'great',
+        'sounds good',
+      ].includes(normalized)
+    ) {
+      return false;
+    }
+
+    if (
+      normalized.includes('ready to move forward') ||
+      normalized.includes('ready for kyc') ||
+      normalized.includes('ready to proceed') ||
+      normalized.includes('let us proceed') ||
+      normalized.includes("let's proceed") ||
+      normalized.includes("i'm ready") ||
+      normalized.includes('upload') ||
+      normalized.includes('move to kyc')
+    ) {
+      return false;
+    }
+
+    return (
+      normalized.includes('?') ||
+      [
+        'return',
+        'revenue',
+        'risk',
+        'timeline',
+        'exit',
+        'spv',
+        'ownership',
+        'ticket',
+        'construction',
+        'operations',
+        'diaspora',
+        'move money',
+        'repatriate',
+        'fee',
+        'yield',
+        'deal room',
+        'investment',
+      ].some((term) => normalized.includes(term))
+    );
+  }
+
+  private async maybeAppendDealRoomDocuments(
+    leadId: string,
+    emissions: AgentEmission[]
+  ): Promise<void> {
+    const messages = await getMessagesByLeadId(leadId);
+    const alreadySent = messages.some((message) => {
+      const metadata = this.parseStoredMetadata(message.metadata);
+      const componentMetadata = metadata
+        ? parseUIComponentMetadata(metadata)
+        : null;
+
+      return componentMetadata?.component === 'document_list';
+    });
+
+    const pendingDocumentList = this.hasComponentEmission(
+      emissions,
+      'document_list'
+    );
+
+    if (alreadySent || pendingDocumentList) {
+      return;
+    }
+
+    emissions.push(
+      this.emitComponentMessage(leadId, 'document_list', buildDocumentListData())
+    );
   }
 
   private async handleKYCGuidance(
@@ -864,46 +1039,7 @@ export class AgentOrchestrator {
 
       case 'flag_for_human_review': {
         const reason = this.requireString(args, 'reason');
-
-        await applyOrchestratorStageTransition(lead.id, 'pending_human_review');
-        await logAuditEvent({
-          leadId: lead.id,
-          eventType: 'human_review_requested',
-          metadata: {
-            reason,
-            source_stage: lead.stage,
-            fingerprint: createHash('sha256')
-              .update(`${lead.id}:${reason}`)
-              .digest('hex'),
-          },
-        });
-
-        if (appUrl) {
-          const chatLink = `${appUrl}/chat/${lead.id}`;
-          const emailTemplate = getAdminHumanReviewEmailTemplate({
-            investorEmail: lead.email,
-            leadId: lead.id,
-            reason,
-            chatLink,
-          });
-
-          await sendEmail({
-            to: ADMIN_ALERT_EMAIL,
-            subject: emailTemplate.subject,
-            html: emailTemplate.html,
-            text: emailTemplate.text,
-          });
-        }
-
-        return {
-          content: JSON.stringify({
-            success: true,
-            leadId: lead.id,
-            escalated: true,
-            reason,
-          }),
-          stageChange: 'pending_human_review',
-        };
+        return this.flagLeadForHumanReview(lead, reason, appUrl);
       }
 
       case 'unlock_agreement': {
@@ -949,6 +1085,52 @@ export class AgentOrchestrator {
     }
   }
 
+  private async flagLeadForHumanReview(
+    lead: Lead,
+    reason: string,
+    appUrl: string
+  ): Promise<ToolExecutionResult> {
+    await applyOrchestratorStageTransition(lead.id, 'pending_human_review');
+    await logAuditEvent({
+      leadId: lead.id,
+      eventType: 'human_review_requested',
+      metadata: {
+        reason,
+        source_stage: lead.stage,
+        fingerprint: createHash('sha256')
+          .update(`${lead.id}:${reason}`)
+          .digest('hex'),
+      },
+    });
+
+    if (appUrl) {
+      const chatLink = `${appUrl}/chat/${lead.id}`;
+      const emailTemplate = getAdminHumanReviewEmailTemplate({
+        investorEmail: lead.email,
+        leadId: lead.id,
+        reason,
+        chatLink,
+      });
+
+      await sendEmail({
+        to: ADMIN_ALERT_EMAIL,
+        subject: emailTemplate.subject,
+        html: emailTemplate.html,
+        text: emailTemplate.text,
+      });
+    }
+
+    return {
+      content: JSON.stringify({
+        success: true,
+        leadId: lead.id,
+        escalated: true,
+        reason,
+      }),
+      stageChange: 'pending_human_review',
+    };
+  }
+
   private emitTextMessage(
     text: string,
     metadata?: Record<string, unknown>
@@ -976,14 +1158,15 @@ export class AgentOrchestrator {
   }
 
   private buildDealRoomWelcomeSequence(leadId: string): AgentEmission[] {
+    const guidedQuestions = buildGuidedQuestionsData();
+
     return [
       this.emitTextMessage(
         "Welcome to the FutureX deal room. I'm Amara, your investment guide. Here's an overview of what we're building together."
       ),
       this.emitComponentMessage(leadId, 'deal_card', buildDealCardData()),
-      this.emitTextMessage(
-        'Feel free to ask me anything about the investment, or use the prompts below to get started.'
-      ),
+      this.emitTextMessage(guidedQuestions.title),
+      this.emitComponentMessage(leadId, 'guided_questions', guidedQuestions),
       this.emitComponentMessage(
         leadId,
         'pipeline_status',
@@ -1086,6 +1269,21 @@ export class AgentOrchestrator {
   ): Record<string, unknown> | undefined {
     const value = args[key];
     return isRecord(value) ? value : undefined;
+  }
+
+  private parseStoredMetadata(
+    value?: string
+  ): Record<string, unknown> | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private stripCurrentUserMessage(

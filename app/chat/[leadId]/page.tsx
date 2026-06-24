@@ -8,9 +8,23 @@ import type { LeadStage } from '@/lib/db/leads';
 import type {
   DealCardComponentData,
   DocumentListComponentData,
+  ExitCardComponentData,
+  GuidedQuestionsComponentData,
   KycPromptComponentData,
+  OwnershipCardComponentData,
   PipelineStatusComponentData,
+  ReturnsTableComponentData,
+  RevenueChartComponentData,
+  RiskTableComponentData,
+  TimelineCardComponentData,
 } from '@/lib/chat/components';
+import { ExitCard } from '@/components/deal-room/ExitCard';
+import { GuidedQuestionChips } from '@/components/deal-room/GuidedQuestionChips';
+import { OwnershipCard } from '@/components/deal-room/OwnershipCard';
+import { ReturnsTable } from '@/components/deal-room/ReturnsTable';
+import { RevenueChart } from '@/components/deal-room/RevenueChart';
+import { RiskTable } from '@/components/deal-room/RiskTable';
+import { TimelineCard } from '@/components/deal-room/TimelineCard';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
 
@@ -45,16 +59,6 @@ const QUALIFICATION_PLACEHOLDERS = {
 } as const;
 
 function getStarterPrompts(stage: string): string[] {
-  if (stage === 'deal_room') {
-    return [
-      'What is the expected return on this investment?',
-      'How does the SPV structure protect me?',
-      'How do I repatriate returns as a diaspora investor?',
-      'What are the risks?',
-      'What happens at the end of the 5-year hold?',
-    ];
-  }
-
   if (stage === 'agreement_pending') {
     return [
       "I'm ready to review and sign the agreement.",
@@ -528,6 +532,46 @@ export default function ChatPage() {
         return renderKycPrompt(
           message.metadata?.data as KycPromptComponentData
         );
+      case 'guided_questions':
+        return (
+          <GuidedQuestionChips
+            data={message.metadata?.data as GuidedQuestionsComponentData}
+            disabled={sending || disableInput}
+            onSelect={submitMessage}
+          />
+        );
+      case 'returns_table':
+        return (
+          <ReturnsTable
+            data={message.metadata?.data as ReturnsTableComponentData}
+          />
+        );
+      case 'revenue_chart':
+        return (
+          <RevenueChart
+            data={message.metadata?.data as RevenueChartComponentData}
+          />
+        );
+      case 'ownership_card':
+        return (
+          <OwnershipCard
+            data={message.metadata?.data as OwnershipCardComponentData}
+          />
+        );
+      case 'risk_table':
+        return (
+          <RiskTable data={message.metadata?.data as RiskTableComponentData} />
+        );
+      case 'timeline_card':
+        return (
+          <TimelineCard
+            data={message.metadata?.data as TimelineCardComponentData}
+          />
+        );
+      case 'exit_card':
+        return (
+          <ExitCard data={message.metadata?.data as ExitCardComponentData} />
+        );
       default:
         return (
           <div
@@ -583,7 +627,7 @@ export default function ChatPage() {
                 }`}
               >
                 {message.role === 'agent' ? (
-                  <div className="flex max-w-3xl items-start gap-3">
+                  <div className="flex w-full max-w-4xl items-start gap-3">
                     <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
                       <Image
                         src="/amara-icon-cropped.jpeg"
@@ -593,7 +637,13 @@ export default function ChatPage() {
                         className="h-full w-full object-cover"
                       />
                     </div>
-                    <div className="max-w-2xl rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink">
+                    <div
+                      className={`rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink ${
+                        message.type === 'text'
+                          ? 'max-w-2xl'
+                          : 'w-full max-w-3xl'
+                      }`}
+                    >
                       <div className="mb-1 text-xs font-semibold text-futurex-gold">
                         Amara
                       </div>
