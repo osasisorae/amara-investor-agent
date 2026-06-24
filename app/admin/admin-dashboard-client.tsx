@@ -250,10 +250,6 @@ export default function AdminDashboardClient({
   };
 
   const getStageColor = (lead: Lead) => {
-    if (lead.stage === 'pending_human_review' && !lead.kyc_submitted_at) {
-      return 'bg-amber-100 text-amber-900';
-    }
-
     switch (lead.stage) {
       case 'outreach_sent':
         return 'bg-blue-100 text-blue-800';
@@ -281,10 +277,6 @@ export default function AdminDashboardClient({
   };
 
   const formatStageLabel = (lead: Lead) => {
-    if (lead.stage === 'pending_human_review' && !lead.kyc_submitted_at) {
-      return 'team review';
-    }
-
     if (lead.stage === 'disqualified') {
       return 'not a fit';
     }
@@ -510,6 +502,21 @@ export default function AdminDashboardClient({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      {lead.stage === 'pending_human_review' ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedKycLeadId((current) =>
+                              current === lead.id ? null : lead.id
+                            )
+                          }
+                          className="rounded border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+                        >
+                          {expandedKycLeadId === lead.id
+                            ? 'Hide Review'
+                            : 'Review KYC'}
+                        </button>
+                      ) : null}
                       {lead.stage === 'payment_pending' ? (
                         <button
                           onClick={() => confirmPayment(lead.id)}
@@ -542,17 +549,10 @@ export default function AdminDashboardClient({
                     </div>
                   </div>
 
-                  {lead.stage === 'pending_human_review' &&
-                  lead.kyc_submitted_at ? (
+                  {lead.stage === 'pending_human_review' ? (
                     <KycReviewPanel
                       leadId={lead.id}
-                      leadEmail={lead.email}
                       isOpen={expandedKycLeadId === lead.id}
-                      onToggle={() =>
-                        setExpandedKycLeadId((current) =>
-                          current === lead.id ? null : lead.id
-                        )
-                      }
                       onUnauthorized={handleUnauthorized}
                       onComplete={() => {
                         setExpandedKycLeadId(null);

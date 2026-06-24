@@ -212,6 +212,7 @@ export default function ChatPage() {
   const leadId = params.leadId as string;
   const { notify } = useFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasCompletedInitialScrollRef = useRef(false);
   const previousLatestMessageKeyRef = useRef<string | null>(null);
@@ -223,6 +224,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(0);
 
   useEffect(() => {
     hasCompletedInitialScrollRef.current = false;
@@ -230,6 +232,38 @@ export default function ChatPage() {
     setLoading(true);
     loadChat();
   }, [leadId]);
+
+  useEffect(() => {
+    const node = composerRef.current;
+
+    if (!node) {
+      return;
+    }
+
+    const updateComposerHeight = () => {
+      setComposerHeight(node.offsetHeight);
+    };
+
+    updateComposerHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateComposerHeight);
+
+      return () => {
+        window.removeEventListener('resize', updateComposerHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateComposerHeight();
+    });
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [loading]);
 
   useEffect(() => {
     if (loading) {
@@ -690,8 +724,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-futurex-bg">
-      <header className="border-b border-futurex-line bg-futurex-surface">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-futurex-bg">
+      <header className="shrink-0 border-b border-futurex-line bg-futurex-surface">
         <div className="mx-auto w-full max-w-4xl px-6 py-4">
           <Image
             src="/amara-wordmark-cropped.jpeg"
@@ -703,62 +737,84 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 py-8">
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${
-                  message.role === 'investor'
-                    ? 'justify-end'
-                    : 'justify-start'
-                }`}
-              >
-                {message.role === 'agent' ? (
-                  <div className="flex w-full max-w-4xl items-start gap-3">
-                    <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
-                      <Image
-                        src="/amara-icon-cropped.jpeg"
-                        alt="Amara icon"
-                        width={36}
-                        height={36}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div
-                      className={`rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink ${
-                        message.type === 'text'
-                          ? 'max-w-2xl'
-                          : 'w-full max-w-3xl'
-                      }`}
-                    >
-                      <div className="mb-1 text-xs font-semibold text-futurex-gold">
-                        Amara
+      <main className="min-h-0 flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto">
+          <div
+            className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pt-8"
+            style={{
+              paddingBottom: composerHeight > 0 ? composerHeight + 32 : 200,
+            }}
+          >
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${
+                    message.role === 'investor'
+                      ? 'justify-end'
+                      : 'justify-start'
+                  }`}
+                >
+                  {message.role === 'agent' ? (
+                    <div className="flex w-full max-w-4xl items-start gap-3">
+                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
+                        <Image
+                          src="/amara-icon-cropped.jpeg"
+                          alt="Amara icon"
+                          width={36}
+                          height={36}
+                          className="h-full w-full object-cover"
+                        />
                       </div>
-                      {renderAgentContent(message)}
-                      <div className="mt-2 text-xs text-futurex-muted">
+                      <div
+                        className={`rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink ${
+                          message.type === 'text'
+                            ? 'max-w-2xl'
+                            : 'w-full max-w-3xl'
+                        }`}
+                      >
+                        <div className="mb-1 text-xs font-semibold text-futurex-gold">
+                          Amara
+                        </div>
+                        {renderAgentContent(message)}
+                        <div className="mt-2 text-xs text-futurex-muted">
+                          {new Date(message.createdAt * 1000).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="max-w-2xl rounded-2xl bg-futurex-gold px-5 py-3 text-futurex-bg">
+                      <div className="whitespace-pre-wrap">{message.text}</div>
+                      <div className="mt-2 text-xs text-futurex-bg/70">
                         {new Date(message.createdAt * 1000).toLocaleTimeString()}
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="max-w-2xl rounded-2xl bg-futurex-gold px-5 py-3 text-futurex-bg">
-                    <div className="whitespace-pre-wrap">{message.text}</div>
-                    <div className="mt-2 text-xs text-futurex-bg/70">
-                      {new Date(message.createdAt * 1000).toLocaleTimeString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              ))}
+            </div>
+            <div
+              ref={messagesEndRef}
+              style={{
+                scrollMarginBottom: `${
+                  composerHeight > 0 ? composerHeight + 24 : 224
+                }px`,
+              }}
+            />
           </div>
-          <div ref={messagesEndRef} />
         </div>
       </main>
 
-      <footer className="border-t border-futurex-line bg-futurex-surface">
-        <div className="mx-auto w-full max-w-4xl px-6 py-4">
+      <footer
+        ref={composerRef}
+        className="sticky bottom-0 z-20 shrink-0 border-t border-futurex-line bg-futurex-surface"
+      >
+        <div
+          className="mx-auto w-full max-w-4xl px-6 pt-4"
+          style={{
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)',
+          }}
+        >
           {shouldShowStarterPrompts && starterPrompts.length > 0 && (
             <div className="mb-4 flex flex-wrap gap-2">
               {starterPrompts.map((prompt) => (

@@ -37,9 +37,7 @@ interface ReviewData {
 
 interface KycReviewPanelProps {
   leadId: string;
-  leadEmail: string;
   isOpen: boolean;
-  onToggle: () => void;
   onUnauthorized: (response: Response) => boolean;
   onComplete: () => void;
 }
@@ -50,9 +48,7 @@ function isImageDocument(filename: string): boolean {
 
 export function KycReviewPanel({
   leadId,
-  leadEmail,
   isOpen,
-  onToggle,
   onUnauthorized,
   onComplete,
 }: KycReviewPanelProps) {
@@ -197,26 +193,22 @@ export function KycReviewPanel({
     }
   };
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-futurex-ink">
-            Human review required
+      <div className="space-y-5">
+          <div>
+            <div className="text-sm font-semibold text-futurex-ink">
+              KYC review
+            </div>
+            <div className="text-xs text-futurex-muted">
+              Review documents and make a compliance decision.
+            </div>
           </div>
-          <div className="text-xs text-futurex-muted">{leadEmail}</div>
-        </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
-        >
-          {isOpen ? 'Hide review' : 'Review KYC'}
-        </button>
-      </div>
 
-      {isOpen ? (
-        <div className="mt-4 space-y-5">
           {loading ? (
             <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-4 text-sm text-futurex-muted">
               Loading review details...
@@ -250,6 +242,22 @@ export function KycReviewPanel({
                     </div>
                     <div className="mt-1 text-sm text-futurex-ink">
                       {data.personalDetails.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
+                      Date of birth
+                    </div>
+                    <div className="mt-1 text-sm text-futurex-ink">
+                      {data.personalDetails.dateOfBirth || 'Not provided'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
+                      Nationality
+                    </div>
+                    <div className="mt-1 text-sm text-futurex-ink">
+                      {data.personalDetails.nationality || 'Not provided'}
                     </div>
                   </div>
                   <div>
@@ -437,7 +445,6 @@ export function KycReviewPanel({
             </>
           ) : null}
         </div>
-      ) : null}
     </div>
   );
 }
