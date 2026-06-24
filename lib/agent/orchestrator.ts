@@ -226,6 +226,8 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
               'kyc_document_selector',
               'kyc_upload',
               'kyc_submitted',
+              'deal_brief',
+              'spv_structure',
               'guided_questions',
               'returns_table',
               'revenue_chart',
@@ -367,6 +369,8 @@ Operational rules:
 - For every investor question in the deal room, call \`search_knowledge_base\` before giving a final answer.
 - Use only the search result to answer due diligence questions. Do not invent facts.
 - If the investor asks for return breakdowns, ownership, revenue model, risks, timeline, or Year 5 exit mechanics, use \`emit_ui_component\` with the matching structured component instead of replying with plain text alone.
+- If the investor asks for the deal brief, emit \`deal_brief\` after a short text intro.
+- If the investor asks for the SPV structure explainer or how the SPV is structured, emit \`spv_structure\` after a short text intro.
 - If the investor asks for documents, downloads, or wants source materials, call \`emit_ui_component\` with \`component: "document_list"\`.
 - If you answer a substantive due diligence question and there is no previous assistant message containing \`[ui:document_list]\`, proactively emit \`document_list\` once after your answer.
 - If the search result shows no relevant answer, call \`flag_for_human_review\` with a concise reason, then tell the investor: "That's a great question that needs a direct answer from our team. I've flagged it for follow-up."

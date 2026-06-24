@@ -110,6 +110,24 @@ function splitIntoSections(file: string, rawContent: string): KnowledgeBaseSecti
   return sections;
 }
 
+function dedupeSections(
+  sections: KnowledgeBaseSection[]
+): KnowledgeBaseSection[] {
+  const unique = new Map<string, KnowledgeBaseSection>();
+
+  for (const section of sections) {
+    const key = `${section.source}:${normalizeValue(section.title)}:${normalizeValue(
+      section.content
+    )}`;
+
+    if (!unique.has(key)) {
+      unique.set(key, section);
+    }
+  }
+
+  return [...unique.values()];
+}
+
 function buildExcerpt(content: string, terms: string[]): string {
   const lines = content
     .split('\n')
@@ -130,11 +148,13 @@ export function searchKnowledgeBaseStructured(
   query: string
 ): KnowledgeBaseSearchResult {
   const terms = tokenizeQuery(query);
-  const sections = loadKnowledgeBaseFiles()
-    .filter(({ filePath }) => fs.existsSync(filePath))
-    .flatMap(({ file, filePath }) =>
-      splitIntoSections(file, fs.readFileSync(filePath, 'utf-8'))
-    );
+  const sections = dedupeSections(
+    loadKnowledgeBaseFiles()
+      .filter(({ filePath }) => fs.existsSync(filePath))
+      .flatMap(({ file, filePath }) =>
+        splitIntoSections(file, fs.readFileSync(filePath, 'utf-8'))
+      )
+  );
 
   const scoredHits = sections
     .map((section) => {
@@ -158,13 +178,26 @@ export function searchKnowledgeBaseStructured(
       };
     })
     .filter((hit) => hit.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 4);
+    .sort((left, right) => right.score - left.score);
+
+  const uniqueHits = new Map<string, KnowledgeBaseSearchHit>();
+
+  for (const hit of scoredHits) {
+    const key = `${hit.source}:${normalizeValue(hit.title)}:${normalizeValue(
+      hit.excerpt
+    )}`;
+
+    if (!uniqueHits.has(key)) {
+      uniqueHits.set(key, hit);
+    }
+  }
+
+  const dedupedHits = [...uniqueHits.values()].slice(0, 4);
 
   return {
-    found: scoredHits.length > 0,
+    found: dedupedHits.length > 0,
     query,
-    hits: scoredHits,
+    hits: dedupedHits,
   };
 }
 

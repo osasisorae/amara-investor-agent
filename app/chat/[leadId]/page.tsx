@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import type { ChatMessage } from '@/lib/chat/messages';
 import type { LeadStage } from '@/lib/db/leads';
 import type {
+  DealBriefCardComponentData,
   DealCardComponentData,
   DocumentListComponentData,
   ExitCardComponentData,
@@ -21,14 +22,17 @@ import type {
   ReturnsTableComponentData,
   RevenueChartComponentData,
   RiskTableComponentData,
+  SpvStructureCardComponentData,
   TimelineCardComponentData,
 } from '@/lib/chat/components';
+import { DealBriefCard } from '@/components/deal-room/DealBriefCard';
 import { ExitCard } from '@/components/deal-room/ExitCard';
 import { GuidedQuestionChips } from '@/components/deal-room/GuidedQuestionChips';
 import { OwnershipCard } from '@/components/deal-room/OwnershipCard';
 import { ReturnsTable } from '@/components/deal-room/ReturnsTable';
 import { RevenueChart } from '@/components/deal-room/RevenueChart';
 import { RiskTable } from '@/components/deal-room/RiskTable';
+import { SPVStructureCard } from '@/components/deal-room/SPVStructureCard';
 import { TimelineCard } from '@/components/deal-room/TimelineCard';
 import { KYCConsentCard } from '@/components/deal-room/kyc/KYCConsentCard';
 import { KYCDocumentSelectorCard } from '@/components/deal-room/kyc/KYCDocumentSelectorCard';
@@ -141,7 +145,11 @@ function renderDealCard(data: DealCardComponentData) {
   );
 }
 
-function renderDocumentList(data: DocumentListComponentData) {
+function renderDocumentList(
+  data: DocumentListComponentData,
+  onSelect: (prompt: string) => void,
+  disabled = false
+) {
   return (
     <div className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5">
       <h3 className="font-serif text-2xl text-futurex-ink">{data.title}</h3>
@@ -150,12 +158,12 @@ function renderDocumentList(data: DocumentListComponentData) {
       </p>
       <div className="mt-4 space-y-3">
         {data.documents.map((document) => (
-          <a
-            key={document.href}
-            href={document.href}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 transition hover:border-futurex-gold"
+          <button
+            key={document.label}
+            type="button"
+            onClick={() => onSelect(document.triggerPrompt)}
+            disabled={disabled}
+            className="block w-full rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-left transition hover:border-futurex-gold disabled:cursor-not-allowed disabled:opacity-50"
           >
             <div className="text-sm font-semibold text-futurex-ink">
               {document.label}
@@ -163,7 +171,7 @@ function renderDocumentList(data: DocumentListComponentData) {
             <div className="mt-2 text-sm leading-6 text-futurex-muted">
               {document.description}
             </div>
-          </a>
+          </button>
         ))}
       </div>
     </div>
@@ -603,7 +611,9 @@ export default function ChatPage() {
         );
       case 'document_list':
         return renderDocumentList(
-          message.metadata?.data as DocumentListComponentData
+          message.metadata?.data as DocumentListComponentData,
+          submitMessage,
+          sending || disableInput
         );
       case 'pipeline_status':
         return renderPipelineStatus(
@@ -661,6 +671,20 @@ export default function ChatPage() {
             data={message.metadata?.data as GuidedQuestionsComponentData}
             disabled={sending || disableInput}
             onSelect={submitMessage}
+          />
+        );
+      case 'deal_brief':
+        return (
+          <DealBriefCard
+            data={message.metadata?.data as DealBriefCardComponentData}
+          />
+        );
+      case 'spv_structure':
+        return (
+          <SPVStructureCard
+            data={message.metadata?.data as SpvStructureCardComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
           />
         );
       case 'returns_table':
@@ -724,7 +748,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-futurex-bg">
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-futurex-bg">
       <header className="shrink-0 border-b border-futurex-line bg-futurex-surface">
         <div className="mx-auto w-full max-w-4xl px-6 py-4">
           <Image
@@ -738,9 +762,9 @@ export default function ChatPage() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        <div className="h-full overflow-y-auto">
+        <div className="h-full overflow-y-auto overscroll-contain">
           <div
-            className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 pt-8"
+            className="mx-auto flex min-h-full w-full max-w-4xl flex-col justify-end px-6 pt-8"
             style={{
               paddingBottom: composerHeight > 0 ? composerHeight + 32 : 200,
             }}
@@ -807,7 +831,7 @@ export default function ChatPage() {
 
       <footer
         ref={composerRef}
-        className="sticky bottom-0 z-20 shrink-0 border-t border-futurex-line bg-futurex-surface"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-futurex-line bg-futurex-surface"
       >
         <div
           className="mx-auto w-full max-w-4xl px-6 pt-4"

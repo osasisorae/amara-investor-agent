@@ -9,12 +9,14 @@ import {
   MINIMUM_TICKET_NGN,
 } from '@/lib/agent/qualification';
 import {
+  buildDealBriefData,
   buildExitCardData,
   buildGuidedQuestionsData,
   buildOwnershipCardData,
   buildReturnsTableData,
   buildRevenueChartData,
   buildRiskTableData,
+  buildSpvStructureData,
   buildTimelineCardData,
 } from '@/lib/knowledge-base/deal-room-data';
 import {
@@ -34,6 +36,8 @@ export type AgentMessageType =
   | 'kyc_document_selector'
   | 'kyc_upload'
   | 'kyc_submitted'
+  | 'deal_brief'
+  | 'spv_structure'
   | 'guided_questions'
   | 'returns_table'
   | 'revenue_chart'
@@ -54,7 +58,7 @@ export interface DealCardComponentData {
 
 export interface DocumentCardData {
   label: string;
-  href: string;
+  triggerPrompt: string;
   description: string;
 }
 
@@ -128,6 +132,46 @@ export interface KycSubmittedComponentData {
   title: string;
   description: string;
   reviewWindowLabel: string;
+}
+
+export interface DealBriefCardComponentData {
+  title: string;
+  snapshot: Array<{
+    label: string;
+    value: string;
+  }>;
+  whatSpvOwns: string;
+  returnsSummary: {
+    originalTicket: string;
+    baseCaseTotalProceeds: string;
+    baseCaseMultiple: string;
+    upsideCaseTotalProceeds: string;
+    upsideCaseMultiple: string;
+  };
+  revenueStreams: Array<{
+    label: string;
+    monthly: string;
+    note?: string;
+  }>;
+  totalGrossMonthly: string;
+  capitalUse: Array<{
+    label: string;
+    amount: string;
+  }>;
+}
+
+export interface SpvStructureCardComponentData {
+  title: string;
+  whySpv: string;
+  investorGroupLabel: string;
+  spvLabel: string;
+  assetSummary: string;
+  revenueRecipientLabel: string;
+  revenueSplit: {
+    investors: string;
+    futurex: string;
+  };
+  diligenceQuestions: string[];
 }
 
 export interface ReturnsTableComponentData {
@@ -221,6 +265,8 @@ export interface UIComponentDataMap {
   kyc_document_selector: KycDocumentSelectorComponentData;
   kyc_upload: KycUploadComponentData;
   kyc_submitted: KycSubmittedComponentData;
+  deal_brief: DealBriefCardComponentData;
+  spv_structure: SpvStructureCardComponentData;
   guided_questions: GuidedQuestionsComponentData;
   returns_table: ReturnsTableComponentData;
   revenue_chart: RevenueChartComponentData;
@@ -261,6 +307,8 @@ export function isUIComponentType(value: string): value is UIComponentType {
     value === 'kyc_document_selector' ||
     value === 'kyc_upload' ||
     value === 'kyc_submitted' ||
+    value === 'deal_brief' ||
+    value === 'spv_structure' ||
     value === 'guided_questions' ||
     value === 'returns_table' ||
     value === 'revenue_chart' ||
@@ -289,13 +337,13 @@ export function buildDocumentListData(): DocumentListComponentData {
     documents: [
       {
         label: 'Deal Brief',
-        href: '/deal-docs/akwa-ibom-deal-brief.md',
+        triggerPrompt: 'Show me the deal brief',
         description:
           'Opportunity snapshot, economics, returns framing, and operating assumptions.',
       },
       {
         label: 'SPV Structure Explainer',
-        href: '/deal-docs/spv-structure-explainer.md',
+        triggerPrompt: 'Show me the SPV structure explainer',
         description:
           'How the vehicle is structured and how investor ownership is ring-fenced.',
       },
@@ -394,6 +442,14 @@ export function buildKycSubmittedData(): KycSubmittedComponentData {
   };
 }
 
+export function buildDealBriefComponentData(): DealBriefCardComponentData {
+  return buildDealBriefData();
+}
+
+export function buildSpvStructureComponentData(): SpvStructureCardComponentData {
+  return buildSpvStructureData();
+}
+
 export function buildDefaultComponentData(
   component: UIComponentType,
   currentStage: LeadStage
@@ -417,6 +473,10 @@ export function buildDefaultComponentData(
       return buildKycUploadData();
     case 'kyc_submitted':
       return buildKycSubmittedData();
+    case 'deal_brief':
+      return buildDealBriefComponentData();
+    case 'spv_structure':
+      return buildSpvStructureComponentData();
     case 'guided_questions':
       return buildGuidedQuestionsData();
     case 'returns_table':
@@ -466,6 +526,10 @@ export function getComponentFallbackText(
       return '[ui:kyc_upload] KYC upload';
     case 'kyc_submitted':
       return '[ui:kyc_submitted] KYC submitted';
+    case 'deal_brief':
+      return '[ui:deal_brief] Deal brief';
+    case 'spv_structure':
+      return '[ui:spv_structure] SPV structure';
     case 'guided_questions':
       return '[ui:guided_questions] Due diligence prompts';
     case 'returns_table':
