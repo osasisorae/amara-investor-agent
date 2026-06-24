@@ -42,8 +42,9 @@ Amara is **not a chatbot**. She is an autonomous workflow agent that:
 | Agent Reasoning | Qwen (via Qwen Cloud Model Studio API) |
 | Persistent Memory | Turso (libSQL) — conversation state, lead status, audit trail |
 | Email | Resend |
-| File Storage | Vercel Blob (KYC documents) |
-| Backend Deployment | Alibaba Cloud ECS |
+| File Storage | Cloudflare R2 (KYC documents) |
+| Payment Processing | Flutterwave |
+| Backend Deployment | Vercel |
 | Auth | NextAuth.js |
 
 ---
@@ -125,12 +126,43 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 See `.env.example` for all required variables:
 
-- `QWEN_API_KEY` - Qwen Cloud API key
+### Core Services
+- `QWEN_API_KEY` - Qwen Cloud API key for agent reasoning
+- `QWEN_API_BASE_URL` - Qwen Cloud workspace endpoint
+- `QWEN_MODEL` - Model to use (default: qwen-plus)
+
+### Database
 - `TURSO_DATABASE_URL` - Turso database connection string
 - `TURSO_AUTH_TOKEN` - Turso authentication token
+
+### Email
 - `RESEND_API_KEY` - Resend email API key
-- `NEXTAUTH_SECRET` - NextAuth session secret
-- `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token
+- `RESEND_FROM_EMAIL` - Verified sender email (e.g., amara@investfuturex.com)
+
+### File Storage
+- `FILE_STORAGE_PROVIDER` - Choose 'cloudflare-r2' or 'vercel-blob'
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` - Cloudflare R2 credentials
+- `R2_BUCKET_NAME` - R2 bucket name (e.g., amara-kyc)
+- `R2_ENDPOINT` - R2 endpoint URL
+- Or: `BLOB_READ_WRITE_TOKEN` - Vercel Blob storage token (alternative)
+
+### Payment Processing
+- `FLUTTERWAVE_PK` - Flutterwave public key (TEST or LIVE)
+- `FLUTTERWAVE_SK` - Flutterwave secret key (keep secure)
+- `FLUTTERWAVE_EK` - Flutterwave encryption key
+- Get your keys from: https://dashboard.flutterwave.com/dashboard/settings/apis
+- ⚠️ **Important**: Use TEST keys for development, switch to LIVE keys for production
+
+### Authentication
+- `NEXTAUTH_SECRET` - NextAuth session secret (generate with `openssl rand -base64 32`)
+- `ADMIN_EMAIL` - Admin dashboard login email
+- `ADMIN_PASSWORD` - Admin dashboard password
+- `ADMIN_JWT_SECRET` - JWT secret for admin sessions
+
+### App Configuration
+- `NEXT_PUBLIC_APP_URL` - Your app URL (http://localhost:3000 for dev)
+- `NODE_ENV` - Environment (development/production)
+- `DEMO_MODE` - Set to 'true' to skip OTP verification (testing only)
 
 ---
 
