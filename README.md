@@ -174,7 +174,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 **Builder:** Osas Isorae  
 **Company:** FutureX  
-**Contact:** her@investfuturex.com  
+**Contact:** amara@investfuturex.com  
 **Hackathon:** Qwen Cloud Hackathon 2026 — Track 4: Autopilot Agent  
 **Submission Deadline:** July 9, 2026
 

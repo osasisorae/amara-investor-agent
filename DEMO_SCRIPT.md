@@ -165,7 +165,7 @@
 **[End screen]**
 - **Repository**: github.com/osasisorae/amara-investor-agent
 - **Built by**: Osas Isorae
-- **Contact**: her@investfuturex.com
+- **Contact**: amara@investfuturex.com
 
 ---
 

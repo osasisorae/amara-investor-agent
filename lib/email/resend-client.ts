@@ -6,7 +6,7 @@ if (!process.env.RESEND_API_KEY) {
 
 export const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'her@investfuturex.com';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'amara@investfuturex.com';
 
 export interface EmailOptions {
   to: string;
