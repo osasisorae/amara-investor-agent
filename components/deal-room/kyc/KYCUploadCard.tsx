@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KycUploadComponentData } from '@/lib/chat/components';
 import {
   getKycUploadSlots,
@@ -125,6 +125,7 @@ export function KYCUploadCard({
   disabled = false,
   onSendPrompt,
 }: KYCUploadCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const documentType = (data?.documentType || 'passport') as KycPrimaryDocumentType;
   const slots = useMemo(() => getKycUploadSlots(documentType), [documentType]);
   const [uploads, setUploads] = useState<Partial<Record<KycUploadSlot, UploadState>>>(
@@ -134,6 +135,15 @@ export function KYCUploadCard({
   const [loadError, setLoadError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const keepCardInView = (behavior: ScrollBehavior = 'auto') => {
+    window.requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({
+        block: 'nearest',
+        behavior,
+      });
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -150,14 +160,15 @@ export function KYCUploadCard({
           documents?: PersistedKycDocument[];
         }>(response);
 
-        if (!response.ok) {
-          if (!cancelled) {
-            setUploads({});
-            setLoadError(
+      if (!response.ok) {
+        if (!cancelled) {
+          setUploads({});
+          setLoadError(
               response.status === 401
                 ? 'Your secure investor session expired. Reopen the chat access link and try again.'
                 : payload.error || 'Failed to load your uploaded documents.'
             );
+            keepCardInView('auto');
           }
           return;
         }
@@ -184,12 +195,14 @@ export function KYCUploadCard({
 
         if (!cancelled) {
           setUploads(nextUploads);
+          keepCardInView('auto');
         }
       } catch (error) {
         console.error('Failed to load persisted KYC uploads:', error);
         if (!cancelled) {
           setUploads({});
           setLoadError('Failed to load your uploaded documents.');
+          keepCardInView('auto');
         }
       } finally {
         if (!cancelled) {
@@ -245,6 +258,7 @@ export function KYCUploadCard({
       uploading: true,
     });
     setSubmitError('');
+    keepCardInView('auto');
 
     try {
       const formData = new FormData();
@@ -268,6 +282,7 @@ export function KYCUploadCard({
           documentId: undefined,
           uploading: false,
         });
+        keepCardInView();
         return;
       }
 
@@ -277,6 +292,7 @@ export function KYCUploadCard({
         filename: payload.document.filename || payload.filename,
         uploading: false,
       });
+      keepCardInView();
     } catch (error) {
       console.error('Failed to upload KYC document:', error);
       updateSlot(slot, {
@@ -284,6 +300,7 @@ export function KYCUploadCard({
         filename: undefined,
         uploading: false,
       });
+      keepCardInView();
     }
   };
 
@@ -326,6 +343,7 @@ export function KYCUploadCard({
           filename: currentUpload.filename,
           uploading: false,
         });
+        keepCardInView();
         return;
       }
 
@@ -334,6 +352,7 @@ export function KYCUploadCard({
         delete next[slot];
         return next;
       });
+      keepCardInView();
     } catch (error) {
       console.error('Failed to remove KYC document:', error);
       updateSlot(slot, {
@@ -342,6 +361,7 @@ export function KYCUploadCard({
         filename: currentUpload.filename,
         uploading: false,
       });
+      keepCardInView();
     }
   };
 
@@ -368,7 +388,10 @@ export function KYCUploadCard({
   };
 
   return (
-    <div className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5">
+    <div
+      ref={cardRef}
+      className="rounded-[24px] border border-futurex-line bg-futurex-surface2 p-5"
+    >
       <div className="text-[11px] uppercase tracking-[0.22em] text-futurex-gold">
         KYC upload
       </div>
@@ -414,7 +437,7 @@ export function KYCUploadCard({
                     {state?.uploading ? 'Removing...' : 'Remove'}
                   </button>
                 ) : (
-                  <label className="inline-flex cursor-pointer items-center rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold">
+                  <label className="relative inline-flex shrink-0 cursor-pointer items-center overflow-hidden rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold">
                     <span>
                       {state?.uploading
                         ? 'Uploading...'
@@ -451,10 +474,12 @@ export function KYCUploadCard({
                             uploading: false,
                           });
                         } finally {
+                          event.currentTarget.blur();
                           event.currentTarget.value = '';
+                          keepCardInView('auto');
                         }
                       }}
-                      className="sr-only"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                     />
                   </label>
                 )}
