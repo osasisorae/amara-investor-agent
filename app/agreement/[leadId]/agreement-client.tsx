@@ -3,19 +3,32 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import {
-  buildCommitmentSelection,
-  coerceCommitmentSlotCount,
+  AGREEMENT_VERSION,
+  FUTUREX_LEGAL_NAME,
+  getAgreementMarkdown,
+} from '@/lib/agreement/template';
+import { markdownToHtml } from '@/lib/utils/markdown';
+import { useFeedback } from '@/components/feedback-provider';
+import {
+  buildCommitmentSelection as buildCommitmentSelectionFromSlots,
+  coerceCommitmentSlotCount as coerceCommitmentSlotCountFromInput,
   getSlotLabel,
   type CommitmentSelection,
 } from '@/lib/agreement/commitment';
-import { getAgreementMarkdown } from '@/lib/agreement/template';
-import { markdownToHtml } from '@/lib/utils/markdown';
-import { useFeedback } from '@/components/feedback-provider';
 
 interface AgreementLead {
   id: string;
   email: string;
   full_name?: string;
+  phone?: string;
+  country?: string;
+  date_of_birth?: string;
+  nationality?: string;
+  employer_or_business_address?: string;
+  tax_identification_number?: string;
+  source_of_funds_type?: string;
+  source_of_funds_summary?: string;
+  expected_funding_method?: string;
   stage: string;
 }
 
@@ -23,6 +36,7 @@ interface AgreementClientProps {
   lead: AgreementLead;
   agreementMarkdown: string;
   initialCommitment: CommitmentSelection;
+  agreementVersion: string;
 }
 
 function getStageLabel(stage: string): string {
@@ -44,6 +58,7 @@ export default function AgreementClient({
   lead,
   agreementMarkdown,
   initialCommitment,
+  agreementVersion,
 }: AgreementClientProps) {
   const { notify } = useFeedback();
   const [stage, setStage] = useState(lead.stage);
@@ -56,12 +71,22 @@ export default function AgreementClient({
   const [warning, setWarning] = useState<string | null>(null);
 
   const canSign = stage === 'agreement_pending';
-  const commitment = buildCommitmentSelection(slotCount);
-  const perSlotCommitmentLabel = buildCommitmentSelection(1).commitmentLabel;
+  const commitment = buildCommitmentSelectionFromSlots(slotCount);
+  const perSlotCommitmentLabel =
+    buildCommitmentSelectionFromSlots(1).commitmentLabel;
   const agreementPreviewMarkdown = getAgreementMarkdown({
     lead: {
       email: lead.email,
       full_name: fullName.trim() || lead.full_name,
+      phone: lead.phone,
+      country: lead.country,
+      date_of_birth: lead.date_of_birth,
+      nationality: lead.nationality,
+      employer_or_business_address: lead.employer_or_business_address,
+      tax_identification_number: lead.tax_identification_number,
+      source_of_funds_type: lead.source_of_funds_type,
+      source_of_funds_summary: lead.source_of_funds_summary,
+      expected_funding_method: lead.expected_funding_method,
     },
     commitmentLabel: commitment.commitmentLabel,
     slotCount: commitment.slotCount,
@@ -89,7 +114,7 @@ export default function AgreementClient({
   };
 
   const updateSlotCount = (nextValue: unknown) => {
-    const nextSlotCount = coerceCommitmentSlotCount(nextValue);
+    const nextSlotCount = coerceCommitmentSlotCountFromInput(nextValue);
     if (!nextSlotCount || nextSlotCount === slotCount) {
       return;
     }
@@ -218,8 +243,11 @@ export default function AgreementClient({
                 Agreement Review
               </p>
               <h1 className="mt-2 font-serif text-3xl text-futurex-ink">
-                FutureX Subscription Agreement
+                FutureX Master Investment Agreement
               </h1>
+              <div className="mt-2 text-xs uppercase tracking-[0.18em] text-futurex-muted">
+                {FUTUREX_LEGAL_NAME} · {agreementVersion || AGREEMENT_VERSION}
+              </div>
             </div>
             <div className="rounded-full border border-futurex-gold-border bg-futurex-gold-soft px-3 py-1 text-xs font-semibold text-futurex-gold">
               {getStageLabel(stage)}

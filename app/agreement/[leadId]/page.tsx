@@ -2,12 +2,17 @@ import Image from 'next/image';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import AgreementClient from './agreement-client';
-import { getAgreementMarkdown } from '@/lib/agreement/template';
+import {
+  AGREEMENT_VERSION,
+  buildAgreementInvestorParty,
+  getAgreementMarkdown,
+} from '@/lib/agreement/template';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
   getLeadById,
   markAgreementViewed,
 } from '@/lib/db/leads';
+import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { getLeadCommitmentSelection } from '@/lib/payment';
 
 export default async function AgreementPage({
@@ -37,9 +42,16 @@ export default async function AgreementPage({
     userAgent: headerStore.get('user-agent') || undefined,
   });
 
-  const commitment = await getLeadCommitmentSelection(params.leadId);
-  const agreementMarkdown = getAgreementMarkdown({
+  const [commitment, latestAnswers] = await Promise.all([
+    getLeadCommitmentSelection(params.leadId),
+    getLatestQualificationAnswerMap(params.leadId),
+  ]);
+  const agreementLead = buildAgreementInvestorParty({
     lead,
+    answers: latestAnswers,
+  });
+  const agreementMarkdown = getAgreementMarkdown({
+    lead: agreementLead,
     commitmentLabel: commitment.commitmentLabel,
     slotCount: commitment.slotCount,
   });
@@ -59,7 +71,7 @@ export default async function AgreementPage({
               />
             </div>
             <div className="hidden text-[11px] uppercase tracking-[0.22em] text-futurex-muted sm:block">
-              Investor agreement
+              Master investment agreement
             </div>
           </div>
           <div className="rounded-full border border-futurex-gold-border bg-futurex-gold-soft px-3 py-1 text-xs font-semibold text-futurex-gold">
@@ -72,12 +84,23 @@ export default async function AgreementPage({
         <AgreementClient
           lead={{
             id: lead.id,
-            email: lead.email,
-            full_name: lead.full_name,
+            email: agreementLead.email,
+            full_name: agreementLead.full_name,
+            phone: agreementLead.phone,
+            country: agreementLead.country,
+            date_of_birth: agreementLead.date_of_birth,
+            nationality: agreementLead.nationality,
+            employer_or_business_address:
+              agreementLead.employer_or_business_address,
+            tax_identification_number: agreementLead.tax_identification_number,
+            source_of_funds_type: agreementLead.source_of_funds_type,
+            source_of_funds_summary: agreementLead.source_of_funds_summary,
+            expected_funding_method: agreementLead.expected_funding_method,
             stage: lead.stage,
           }}
           agreementMarkdown={agreementMarkdown}
           initialCommitment={commitment}
+          agreementVersion={AGREEMENT_VERSION}
         />
       </main>
     </div>

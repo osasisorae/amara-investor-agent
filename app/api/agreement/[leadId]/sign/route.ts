@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   AGREEMENT_VERSION,
+  buildAgreementInvestorParty,
   buildAgreementHashInput,
   getAgreementMarkdown,
 } from '@/lib/agreement/template';
@@ -15,6 +16,7 @@ import {
 } from '@/lib/db/leads';
 import { saveMessage } from '@/lib/db/messages';
 import { consumeOtpCode } from '@/lib/db/otp';
+import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import {
   getLeadCommitmentSelection,
   getPaymentReference,
@@ -63,7 +65,10 @@ export async function POST(
       );
     }
 
-    const commitmentSelection = await getLeadCommitmentSelection(leadId);
+    const [commitmentSelection, latestAnswers] = await Promise.all([
+      getLeadCommitmentSelection(leadId),
+      getLatestQualificationAnswerMap(leadId),
+    ]);
 
     if (requestedSlotCount !== commitmentSelection.slotCount) {
       return NextResponse.json(
@@ -89,12 +94,14 @@ export async function POST(
     }
 
     const signedAt = Math.floor(Date.now() / 1000);
+    const agreementLead = buildAgreementInvestorParty({
+      lead,
+      answers: latestAnswers,
+      fullNameOverride: fullName,
+    });
 
     const agreementText = getAgreementMarkdown({
-      lead: {
-        email: lead.email,
-        full_name: fullName,
-      },
+      lead: agreementLead,
       commitmentLabel: commitmentSelection.commitmentLabel,
       slotCount: commitmentSelection.slotCount,
       generatedAt: signedAt,

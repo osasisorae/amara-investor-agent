@@ -26,12 +26,25 @@ export function markdownToHtml(markdown: string): string {
   // Convert horizontal rules (---)
   html = html.replace(/^---$/gm, '<hr class="my-4 border-futurex-line" />');
 
-  // Convert bullet lists (- item or * item)
-  html = html.replace(/^[*-] (.+)$/gm, '<li class="ml-4">$1</li>');
-  html = html.replace(/(<li.*<\/li>\n?)+/g, '<ul class="list-disc space-y-1 my-2">$&</ul>');
-
-  // Convert numbered lists (1. item)
-  html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4">$1</li>');
+  // Convert ordered and unordered list items using temporary markers so they
+  // can be wrapped without collapsing into the same list type.
+  html = html.replace(
+    /^\d+\. (.+)$/gm,
+    '<li data-list="ordered" class="ml-4">$1</li>'
+  );
+  html = html.replace(
+    /^[*-] (.+)$/gm,
+    '<li data-list="unordered" class="ml-4">$1</li>'
+  );
+  html = html.replace(
+    /(<li data-list="ordered".*<\/li>\n?)+/g,
+    '<ol class="list-decimal space-y-1 my-2">$&</ol>'
+  );
+  html = html.replace(
+    /(<li data-list="unordered".*<\/li>\n?)+/g,
+    '<ul class="list-disc space-y-1 my-2">$&</ul>'
+  );
+  html = html.replace(/ data-list="(?:ordered|unordered)"/g, '');
 
   // Convert line breaks to <br> for better spacing
   html = html.replace(/\n\n/g, '<br/><br/>');
