@@ -12,12 +12,17 @@ import type {
   DocumentListComponentData,
   ExitCardComponentData,
   GuidedQuestionsComponentData,
-  KycConsentComponentData,
-  KycDocumentSelectorComponentData,
-  KycPersonalDetailsComponentData,
-  KycPromptComponentData,
-  KycSubmittedComponentData,
-  KycUploadComponentData,
+    KycConsentComponentData,
+    KycFundingSourceComponentData,
+    KycAdditionalUploadsComponentData,
+    KycDocumentSelectorComponentData,
+    KycInvestorProfileComponentData,
+    KycPersonalDetailsComponentData,
+    KycPaymentAccountComponentData,
+    KycPromptComponentData,
+    KycRiskDeclarationsComponentData,
+    KycSubmittedComponentData,
+    KycUploadComponentData,
   OwnershipCardComponentData,
   PaymentMethodSelectorComponentData,
   PaymentInstructionsComponentData,
@@ -41,8 +46,13 @@ import { RiskTable } from '@/components/deal-room/RiskTable';
 import { SPVStructureCard } from '@/components/deal-room/SPVStructureCard';
 import { TimelineCard } from '@/components/deal-room/TimelineCard';
 import { KYCConsentCard } from '@/components/deal-room/kyc/KYCConsentCard';
+import { KYCAdditionalUploadsCard } from '@/components/deal-room/kyc/KYCAdditionalUploadsCard';
 import { KYCDocumentSelectorCard } from '@/components/deal-room/kyc/KYCDocumentSelectorCard';
+import { KYCFundingSourceCard } from '@/components/deal-room/kyc/KYCFundingSourceCard';
+import { KYCInvestorProfileCard } from '@/components/deal-room/kyc/KYCInvestorProfileCard';
+import { KYCPaymentAccountCard } from '@/components/deal-room/kyc/KYCPaymentAccountCard';
 import { KYCPersonalDetailsCard } from '@/components/deal-room/kyc/KYCPersonalDetailsCard';
+import { KYCRiskDeclarationsCard } from '@/components/deal-room/kyc/KYCRiskDeclarationsCard';
 import { KYCSubmittedCard } from '@/components/deal-room/kyc/KYCSubmittedCard';
 import { KYCUploadCardBoundary } from '@/components/deal-room/kyc/KYCUploadCardBoundary';
 import { KYCUploadCard } from '@/components/deal-room/kyc/KYCUploadCard';
@@ -754,6 +764,15 @@ export default function ChatPage() {
             onSendPrompt={submitMessage}
           />
         );
+      case 'kyc_investor_profile':
+        return (
+          <KYCInvestorProfileCard
+            leadId={leadId}
+            data={message.metadata?.data as KycInvestorProfileComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
       case 'kyc_document_selector':
         return (
           <KYCDocumentSelectorCard
@@ -773,6 +792,44 @@ export default function ChatPage() {
               onSendPrompt={submitMessage}
             />
           </KYCUploadCardBoundary>
+        );
+      case 'kyc_funding_source':
+        return (
+          <KYCFundingSourceCard
+            leadId={leadId}
+            data={message.metadata?.data as KycFundingSourceComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_additional_uploads':
+        return (
+          <KYCUploadCardBoundary>
+            <KYCAdditionalUploadsCard
+              leadId={leadId}
+              data={message.metadata?.data as KycAdditionalUploadsComponentData}
+              disabled={sending || disableInput}
+              onSendPrompt={submitMessage}
+            />
+          </KYCUploadCardBoundary>
+        );
+      case 'kyc_risk_declarations':
+        return (
+          <KYCRiskDeclarationsCard
+            leadId={leadId}
+            data={message.metadata?.data as KycRiskDeclarationsComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
+        );
+      case 'kyc_payment_account':
+        return (
+          <KYCPaymentAccountCard
+            leadId={leadId}
+            data={message.metadata?.data as KycPaymentAccountComponentData}
+            disabled={sending || disableInput}
+            onSendPrompt={submitMessage}
+          />
         );
       case 'kyc_submitted':
         return (

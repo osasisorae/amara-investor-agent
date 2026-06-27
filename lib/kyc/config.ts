@@ -1,3 +1,5 @@
+import { humanizeKycDocumentType } from './requirements';
+
 export type KycPrimaryDocumentType =
   | 'passport'
   | 'national_id'
@@ -6,8 +8,7 @@ export type KycPrimaryDocumentType =
 export type KycUploadSlot =
   | 'document_front'
   | 'document_back'
-  | 'proof_of_address'
-  | 'source_of_funds';
+  | 'proof_of_address';
 
 export interface KycDocumentOption {
   value: KycPrimaryDocumentType;
@@ -122,11 +123,6 @@ export function getKycUploadSlots(
       key: 'proof_of_address',
       label: 'Utility bill or bank statement (dated within 3 months)',
       required: true,
-    },
-    {
-      key: 'source_of_funds',
-      label: 'Bank statement, payslip, or business income evidence',
-      required: true,
     }
   );
 
@@ -202,9 +198,7 @@ export function humanizeStoredKycDocType(docType: string): string {
       return "Driver's licence back";
     case 'proof of address':
       return 'Proof of address';
-    case 'source of funds':
-      return 'Source of funds';
     default:
-      return docType.replace(/_/g, ' ');
+      return humanizeKycDocumentType(docType);
   }
 }

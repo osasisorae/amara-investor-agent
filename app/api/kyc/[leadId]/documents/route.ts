@@ -12,6 +12,28 @@ function getStringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function getDocumentCategory(docType: string): string {
+  if (docType === 'proof_of_address') {
+    return 'proof_of_address';
+  }
+
+  if (docType === 'funding_account_statement') {
+    return 'payment_account';
+  }
+
+  if (
+    docType.endsWith('_front') ||
+    docType.endsWith('_back') ||
+    docType.startsWith('passport_') ||
+    docType.startsWith('national_id_') ||
+    docType.startsWith('drivers_licence_')
+  ) {
+    return 'identity';
+  }
+
+  return 'source_of_funds';
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { leadId: string } }
@@ -25,14 +47,27 @@ export async function GET(
     }
 
     const documents = await getKycDocumentsByLeadId(leadId);
+    const serializedDocuments = documents.map((document) => ({
+      id: document.id,
+      doc_type: document.docType,
+      filename: document.filename,
+      uploaded_at: document.uploadedAt,
+    }));
+    const grouped = serializedDocuments.reduce<Record<string, typeof serializedDocuments>>(
+      (groups, document) => {
+        const category = getDocumentCategory(document.doc_type);
+        if (!groups[category]) {
+          groups[category] = [];
+        }
+        groups[category].push(document);
+        return groups;
+      },
+      {}
+    );
 
     return NextResponse.json({
-      documents: documents.map((document) => ({
-        id: document.id,
-        doc_type: document.docType,
-        filename: document.filename,
-        uploaded_at: document.uploadedAt,
-      })),
+      documents: serializedDocuments,
+      grouped,
     });
   } catch (error) {
     console.error('Error fetching investor KYC documents:', error);

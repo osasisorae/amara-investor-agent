@@ -37,15 +37,20 @@ export interface Lead {
 export async function createLead(data: {
   email: string;
   addedBy: string;
+  fullName?: string;
 }): Promise<Lead> {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);
   const normalizedEmail = data.email.trim().toLowerCase();
+  const normalizedFullName =
+    typeof data.fullName === 'string' && data.fullName.trim().length > 0
+      ? data.fullName.trim()
+      : null;
 
   await execute(
-    `INSERT INTO leads (id, email, stage, added_by, added_at, created_at, updated_at)
-     VALUES (?, ?, 'outreach_sent', ?, ?, ?, ?)`,
-    [id, normalizedEmail, data.addedBy, now, now, now]
+    `INSERT INTO leads (id, email, stage, full_name, added_by, added_at, created_at, updated_at)
+     VALUES (?, ?, 'outreach_sent', ?, ?, ?, ?, ?)`,
+    [id, normalizedEmail, normalizedFullName, data.addedBy, now, now, now]
   );
 
   const lead = await queryOne<Lead>(

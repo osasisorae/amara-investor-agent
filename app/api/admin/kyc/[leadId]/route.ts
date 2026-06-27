@@ -7,7 +7,7 @@ import {
 } from '@/lib/chat/components';
 import { logAuditEvent } from '@/lib/db/audit';
 import { execute } from '@/lib/db/client';
-import { getKycDocumentsByLeadId, deleteKycDocumentsByLeadId } from '@/lib/db/kyc';
+import { deleteKycDocumentsByLeadId } from '@/lib/db/kyc';
 import {
   approveKYC,
   getLeadById,
@@ -15,18 +15,46 @@ import {
 } from '@/lib/db/leads';
 import { getRecentMessagesByLeadId } from '@/lib/db/messages';
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
-import { sendEmail } from '@/lib/email/resend-client';
 import {
   getKYCApprovalEmailTemplate,
   getKycRejectionEmailTemplate,
 } from '@/lib/email/templates';
+import { sendEmail } from '@/lib/email/resend-client';
+import { validateKycSubmission } from '@/lib/kyc/submission';
+import {
+  getEnhancedDueDiligenceFlags,
+  isKycPaymentMethod,
+  isKycSourceOfFundsType,
+  getKycPaymentMethodLabel,
+  getKycSourceOfFundsLabel,
+  KYC_RISK_DECLARATION_DEFINITIONS,
+} from '@/lib/kyc/requirements';
 
 function getStringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function getAnswer(
+  answers: Record<string, { answer?: string | null }>,
+  key: string
+): string {
+  return (answers[key]?.answer || '').trim();
+}
+
+function formatYesNo(value: string): string {
+  if (value === 'yes') {
+    return 'Yes';
+  }
+
+  if (value === 'no') {
+    return 'No';
+  }
+
+  return '';
+}
+
 function getPersonalDetails(
-  answers: Record<string, { answer: string }>
+  answers: Record<string, { answer?: string | null }>
 ): {
   fullLegalName: string;
   dateOfBirth: string;
@@ -35,11 +63,82 @@ function getPersonalDetails(
   phoneNumber: string;
 } {
   return {
-    fullLegalName: answers.full_legal_name?.answer || '',
-    dateOfBirth: answers.date_of_birth?.answer || '',
-    nationality: answers.nationality?.answer || '',
-    countryOfResidence: answers.country_of_residence?.answer || '',
-    phoneNumber: answers.phone_number?.answer || '',
+    fullLegalName: getAnswer(answers, 'full_legal_name'),
+    dateOfBirth: getAnswer(answers, 'date_of_birth'),
+    nationality: getAnswer(answers, 'nationality'),
+    countryOfResidence: getAnswer(answers, 'country_of_residence'),
+    phoneNumber: getAnswer(answers, 'phone_number'),
+  };
+}
+
+function getInvestorProfile(
+  answers: Record<string, { answer?: string | null }>
+) {
+  return {
+    occupation: getAnswer(answers, 'occupation'),
+    employerOrBusinessName: getAnswer(answers, 'employer_or_business_name'),
+    employerOrBusinessAddress: getAnswer(
+      answers,
+      'employer_or_business_address'
+    ),
+    taxResidencyCountry: getAnswer(answers, 'tax_residency_country'),
+    taxIdentificationNumber: getAnswer(answers, 'tax_identification_number'),
+  };
+}
+
+function getFundingSource(
+  answers: Record<string, { answer?: string | null }>
+) {
+  const sourceOfFundsType = getAnswer(answers, 'source_of_funds_type');
+
+  return {
+    sourceOfFundsType,
+    sourceOfFundsLabel: sourceOfFundsType
+      ? isKycSourceOfFundsType(sourceOfFundsType)
+        ? getKycSourceOfFundsLabel(sourceOfFundsType)
+        : sourceOfFundsType
+      : '',
+    sourceOfFundsSummary: getAnswer(answers, 'source_of_funds_summary'),
+    sourceOfWealthSummary: getAnswer(answers, 'source_of_wealth_summary'),
+  };
+}
+
+function getRiskDeclarations(
+  answers: Record<string, { answer?: string | null }>
+) {
+  return KYC_RISK_DECLARATION_DEFINITIONS.map((definition) => ({
+    key: definition.key,
+    label: definition.label,
+    description: definition.description,
+    value: getAnswer(answers, definition.key),
+    displayValue: formatYesNo(getAnswer(answers, definition.key)) || 'Not provided',
+  }));
+}
+
+function getPaymentAccount(
+  answers: Record<string, { answer?: string | null }>
+) {
+  const expectedFundingMethod = getAnswer(answers, 'expected_funding_method');
+
+  return {
+    expectedFundingMethod,
+    expectedFundingMethodLabel: expectedFundingMethod
+      ? isKycPaymentMethod(expectedFundingMethod)
+        ? getKycPaymentMethodLabel(expectedFundingMethod)
+        : expectedFundingMethod
+      : '',
+    expectedFundingBankCountry: getAnswer(
+      answers,
+      'expected_funding_bank_country'
+    ),
+    expectedFundingAccountName: getAnswer(
+      answers,
+      'expected_funding_account_name'
+    ),
+    paymentFromOwnAccount: getAnswer(answers, 'payment_from_own_account'),
+    paymentFromOwnAccountLabel:
+      formatYesNo(getAnswer(answers, 'payment_from_own_account')) ||
+      'Not provided',
   };
 }
 
@@ -62,11 +161,13 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    const [documents, latestAnswers, messages] = await Promise.all([
-      getKycDocumentsByLeadId(leadId),
+    const [latestAnswers, messages, validation] = await Promise.all([
       getLatestQualificationAnswerMap(leadId),
       getRecentMessagesByLeadId(leadId, 10),
+      validateKycSubmission(leadId),
     ]);
+
+    const enhancedReviewFlags = getEnhancedDueDiligenceFlags(latestAnswers);
 
     return NextResponse.json({
       lead: {
@@ -75,16 +176,22 @@ export async function GET(
         stage: lead.stage,
       },
       personalDetails: {
-        ...getPersonalDetails(
-          latestAnswers as Record<string, { answer: string }>
-        ),
+        ...getPersonalDetails(latestAnswers),
         email: lead.email,
       },
-      documents: documents.map((document) => ({
-        docType: document.docType,
-        filename: document.filename,
-        uploadedAt: document.uploadedAt,
-      })),
+      investorProfile: getInvestorProfile(latestAnswers),
+      fundingSource: getFundingSource(latestAnswers),
+      riskDeclarations: getRiskDeclarations(latestAnswers),
+      paymentAccount: getPaymentAccount(latestAnswers),
+      reviewSummary: {
+        riskLevel: validation.riskLevel,
+        requiresEnhancedReview: validation.requiresEnhancedReview,
+        enhancedReviewFlags,
+        missingAnswers: validation.missingAnswers,
+        missingDocuments: validation.missingDocuments,
+        recommendedMissingAnswers: validation.recommendedMissingAnswers,
+        recommendedMissingDocuments: validation.recommendedMissingDocuments,
+      },
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,
@@ -144,6 +251,20 @@ export async function POST(
     }
 
     if (decision === 'approved' || decision === 'approve') {
+      const validation = await validateKycSubmission(leadId);
+
+      if (!validation.valid) {
+        return NextResponse.json(
+          {
+            error:
+              'KYC package is still incomplete and cannot be approved yet.',
+            missingAnswers: validation.missingAnswers,
+            missingDocuments: validation.missingDocuments,
+          },
+          { status: 400 }
+        );
+      }
+
       await approveKYC(leadId, approvedBy);
 
       const firstMessageTimestamp = Math.floor(Date.now() / 1000);
@@ -198,7 +319,10 @@ export async function POST(
       await logAuditEvent({
         leadId,
         eventType: 'kyc_approved',
-        metadata: { approved_by: approvedBy },
+        metadata: {
+          approved_by: approvedBy,
+          risk_level: validation.riskLevel,
+        },
       });
 
       const appUrl =

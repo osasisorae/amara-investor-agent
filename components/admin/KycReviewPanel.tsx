@@ -31,6 +31,43 @@ interface ReviewData {
     phoneNumber: string;
     email: string;
   };
+  investorProfile: {
+    occupation: string;
+    employerOrBusinessName: string;
+    employerOrBusinessAddress: string;
+    taxResidencyCountry: string;
+    taxIdentificationNumber: string;
+  };
+  fundingSource: {
+    sourceOfFundsType: string;
+    sourceOfFundsLabel: string;
+    sourceOfFundsSummary: string;
+    sourceOfWealthSummary: string;
+  };
+  riskDeclarations: Array<{
+    key: string;
+    label: string;
+    description: string;
+    value: string;
+    displayValue: string;
+  }>;
+  paymentAccount: {
+    expectedFundingMethod: string;
+    expectedFundingMethodLabel: string;
+    expectedFundingBankCountry: string;
+    expectedFundingAccountName: string;
+    paymentFromOwnAccount: string;
+    paymentFromOwnAccountLabel: string;
+  };
+  reviewSummary: {
+    riskLevel: 'standard' | 'enhanced';
+    requiresEnhancedReview: boolean;
+    enhancedReviewFlags: string[];
+    missingAnswers: string[];
+    missingDocuments: string[];
+    recommendedMissingAnswers: string[];
+    recommendedMissingDocuments: string[];
+  };
   documents: ReviewDocument[];
   messages: ReviewMessage[];
 }
@@ -38,6 +75,12 @@ interface ReviewData {
 interface ReviewDocumentsResponse {
   documents: ReviewDocument[];
   error?: string;
+}
+
+interface DecisionResponse {
+  error?: string;
+  missingAnswers?: string[];
+  missingDocuments?: string[];
 }
 
 interface KycReviewPanelProps {
@@ -49,6 +92,41 @@ interface KycReviewPanelProps {
 
 function isImageDocument(filename: string): boolean {
   return /\.(jpg|jpeg|png)$/i.test(filename);
+}
+
+function getDocumentGroupLabel(docType: string): string {
+  if (docType === 'proof_of_address') {
+    return 'Proof of address';
+  }
+
+  if (docType === 'funding_account_statement') {
+    return 'Payment account evidence';
+  }
+
+  if (
+    docType.endsWith('_front') ||
+    docType.endsWith('_back') ||
+    docType.startsWith('passport_') ||
+    docType.startsWith('national_id_') ||
+    docType.startsWith('drivers_licence_')
+  ) {
+    return 'Identity documents';
+  }
+
+  return 'Source of funds evidence';
+}
+
+function renderSummaryField(label: string, value: string) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
+        {label}
+      </div>
+      <div className="mt-1 text-sm text-futurex-ink">
+        {value || 'Not provided'}
+      </div>
+    </div>
+  );
 }
 
 export function KycReviewPanel({
@@ -185,12 +263,19 @@ export function KycReviewPanel({
         return;
       }
 
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as DecisionResponse;
 
       if (!response.ok) {
+        const missingItems = [
+          ...(payload.missingAnswers || []),
+          ...(payload.missingDocuments || []),
+        ];
+
         notify({
           title: 'Decision failed',
-          message: payload.error || 'Failed to save KYC decision.',
+          message: `${payload.error || 'Failed to save KYC decision.'}${
+            missingItems.length ? ` Missing: ${missingItems.join(', ')}.` : ''
+          }`,
           tone: 'error',
         });
         return;
@@ -226,254 +311,438 @@ export function KycReviewPanel({
     return null;
   }
 
+  const documentsByGroup = (data?.documents || []).reduce<
+    Record<string, ReviewDocument[]>
+  >((groups, document) => {
+    const groupLabel = getDocumentGroupLabel(document.docType);
+    if (!groups[groupLabel]) {
+      groups[groupLabel] = [];
+    }
+    groups[groupLabel].push(document);
+    return groups;
+  }, {});
+
   return (
     <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface p-4">
       <div className="space-y-5">
-          <div>
-            <div className="text-sm font-semibold text-futurex-ink">
-              KYC review
-            </div>
-            <div className="text-xs text-futurex-muted">
-              Review documents and make a compliance decision.
-            </div>
+        <div>
+          <div className="text-sm font-semibold text-futurex-ink">
+            KYC review
           </div>
+          <div className="text-xs text-futurex-muted">
+            Review documents, risk flags, and the declared payment path before making a compliance decision.
+          </div>
+        </div>
 
-          {loading ? (
-            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-4 text-sm text-futurex-muted">
-              Loading review details...
+        {loading ? (
+          <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 px-4 py-4 text-sm text-futurex-muted">
+            Loading review details...
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-4 text-sm text-rose-200">
+            {error}
+          </div>
+        ) : null}
+
+        {data ? (
+          <>
+            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                Investor summary
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {renderSummaryField(
+                  'Full legal name',
+                  data.personalDetails.fullLegalName
+                )}
+                {renderSummaryField('Email', data.personalDetails.email)}
+                {renderSummaryField(
+                  'Date of birth',
+                  data.personalDetails.dateOfBirth
+                )}
+                {renderSummaryField(
+                  'Nationality',
+                  data.personalDetails.nationality
+                )}
+                {renderSummaryField(
+                  'Country of residence',
+                  data.personalDetails.countryOfResidence
+                )}
+                {renderSummaryField(
+                  'Phone number',
+                  data.personalDetails.phoneNumber
+                )}
+              </div>
             </div>
-          ) : null}
 
-          {error ? (
-            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-4 text-sm text-rose-200">
-              {error}
-            </div>
-          ) : null}
-
-          {data ? (
-            <>
+            <div className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
                 <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
-                  Investor summary
+                  Investor profile
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Full legal name
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.fullLegalName || 'Not provided'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Email
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.email}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Date of birth
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.dateOfBirth || 'Not provided'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Nationality
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.nationality || 'Not provided'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Country of residence
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.countryOfResidence || 'Not provided'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
-                      Phone number
-                    </div>
-                    <div className="mt-1 text-sm text-futurex-ink">
-                      {data.personalDetails.phoneNumber || 'Not provided'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
-                <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
-                  Documents
-                </div>
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                  {data.documents.length ? (
-                    data.documents.map((document) => {
-                      const documentUrl = documentUrls[document.filename];
-                      const label = humanizeStoredKycDocType(document.docType);
-
-                      return (
-                        <div
-                          key={document.filename}
-                          className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4"
-                        >
-                          <div className="text-sm font-semibold text-futurex-ink">
-                            {label}
-                          </div>
-                          <div className="mt-1 text-xs text-futurex-muted">
-                            Uploaded{' '}
-                            {new Date(
-                              document.uploadedAt * 1000
-                            ).toLocaleString()}
-                          </div>
-
-                          {documentUrl ? (
-                            isImageDocument(document.filename) ? (
-                              <a
-                                href={documentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-3 block"
-                              >
-                                <img
-                                  src={documentUrl}
-                                  alt={label}
-                                  className="max-h-[200px] w-full rounded-xl border border-futurex-line object-cover"
-                                />
-                              </a>
-                            ) : (
-                              <a
-                                href={documentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-3 inline-flex rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
-                              >
-                                View {label} -&gt;
-                              </a>
-                            )
-                          ) : (
-                            <div className="mt-3 text-sm text-futurex-muted">
-                              Secure preview unavailable.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-sm text-futurex-muted lg:col-span-2">
-                      No KYC documents have been uploaded yet.
-                    </div>
+                  {renderSummaryField('Occupation', data.investorProfile.occupation)}
+                  {renderSummaryField(
+                    'Employer or business',
+                    data.investorProfile.employerOrBusinessName
+                  )}
+                  {renderSummaryField(
+                    'Business address',
+                    data.investorProfile.employerOrBusinessAddress
+                  )}
+                  {renderSummaryField(
+                    'Tax residency',
+                    data.investorProfile.taxResidencyCountry
+                  )}
+                  {renderSummaryField(
+                    'Tax identification number',
+                    data.investorProfile.taxIdentificationNumber
                   )}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
-                    Conversation history
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowConversation((current) => !current)}
-                    className="rounded-full border border-futurex-line px-3 py-1.5 text-xs text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
-                  >
-                    {showConversation ? 'Hide messages' : 'Show last 10'}
-                  </button>
+                <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                  Funding source
                 </div>
-
-                {showConversation ? (
-                  <div className="mt-4 space-y-3">
-                    {data.messages.length ? (
-                      data.messages.map((message) => (
-                        <div
-                          key={message.id}
-                          className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-3"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-futurex-gold">
-                              {message.role}
-                            </div>
-                            <div className="text-xs text-futurex-muted">
-                              {new Date(
-                                message.createdAt * 1000
-                              ).toLocaleString()}
-                            </div>
-                          </div>
-                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-futurex-ink">
-                            {message.content}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-sm text-futurex-muted">
-                        No conversation history available.
-                      </div>
-                    )}
+                <div className="mt-4 space-y-4">
+                  {renderSummaryField(
+                    'Declared source',
+                    data.fundingSource.sourceOfFundsLabel
+                  )}
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
+                      Source of funds summary
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-futurex-ink">
+                      {data.fundingSource.sourceOfFundsSummary || 'Not provided'}
+                    </div>
                   </div>
-                ) : null}
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-futurex-muted">
+                      Source of wealth summary
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-futurex-ink">
+                      {data.fundingSource.sourceOfWealthSummary || 'Not provided'}
+                    </div>
+                  </div>
+                </div>
               </div>
+            </div>
 
+            <div className="grid gap-4 xl:grid-cols-[1.25fr_1fr]">
               <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
                 <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
-                  Decision
+                  Risk declarations
                 </div>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => submitDecision('approved')}
-                    disabled={Boolean(submittingDecision)}
-                    className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {submittingDecision === 'approved'
-                      ? 'Approving...'
-                      : 'Approve'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRejectMode((current) => !current)}
-                    disabled={Boolean(submittingDecision)}
-                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
-                  >
-                    {rejectMode ? 'Cancel rejection' : 'Reject'}
-                  </button>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {data.riskDeclarations.map((declaration) => (
+                    <div
+                      key={declaration.key}
+                      className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-3"
+                    >
+                      <div className="text-sm font-semibold text-futurex-ink">
+                        {declaration.label}
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-futurex-muted">
+                        {declaration.description}
+                      </div>
+                      <div className="mt-3 text-sm text-futurex-ink">
+                        {declaration.displayValue}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                    Payment path
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {renderSummaryField(
+                      'Expected method',
+                      data.paymentAccount.expectedFundingMethodLabel
+                    )}
+                    {renderSummaryField(
+                      'Funding bank country',
+                      data.paymentAccount.expectedFundingBankCountry
+                    )}
+                    {renderSummaryField(
+                      'Account holder name',
+                      data.paymentAccount.expectedFundingAccountName
+                    )}
+                    {renderSummaryField(
+                      'Payment from own account',
+                      data.paymentAccount.paymentFromOwnAccountLabel
+                    )}
+                  </div>
                 </div>
 
-                {rejectMode ? (
-                  <div className="mt-4 space-y-3">
-                    <div className="text-sm text-futurex-muted">
-                      Reason for rejection (required)
-                    </div>
-                    <input
-                      type="text"
-                      value={rejectReason}
-                      onChange={(event) => setRejectReason(event.target.value)}
-                      placeholder="Explain what needs to be corrected or resubmitted"
-                      className="w-full rounded-xl border border-futurex-line bg-futurex-surface px-4 py-3 text-futurex-ink outline-none transition placeholder:text-futurex-muted focus:border-futurex-gold"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => submitDecision('rejected')}
-                      disabled={
-                        Boolean(submittingDecision) || !rejectReason.trim()
-                      }
-                      className="rounded-full border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
-                    >
-                      {submittingDecision === 'rejected'
-                        ? 'Rejecting...'
-                        : 'Confirm rejection'}
-                    </button>
+                <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                    Review status
                   </div>
-                ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                        data.reviewSummary.requiresEnhancedReview
+                          ? 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+                          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      }`}
+                    >
+                      {data.reviewSummary.riskLevel} review
+                    </span>
+                    {data.reviewSummary.requiresEnhancedReview ? (
+                      <span className="rounded-full border border-futurex-gold/40 bg-futurex-gold-soft/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-futurex-gold">
+                        Enhanced due diligence
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {data.reviewSummary.enhancedReviewFlags.length ? (
+                    <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-4 text-sm text-amber-100">
+                      <div className="font-semibold text-amber-100">
+                        Enhanced review triggers
+                      </div>
+                      <div className="mt-2">
+                        {data.reviewSummary.enhancedReviewFlags.join(', ')}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {data.reviewSummary.missingAnswers.length ||
+                  data.reviewSummary.missingDocuments.length ? (
+                    <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-4 text-sm text-rose-200">
+                      <div className="font-semibold">Still missing</div>
+                      <div className="mt-2 space-y-2">
+                        {data.reviewSummary.missingAnswers.length ? (
+                          <div>
+                            Answers: {data.reviewSummary.missingAnswers.join(', ')}
+                          </div>
+                        ) : null}
+                        {data.reviewSummary.missingDocuments.length ? (
+                          <div>
+                            Documents:{' '}
+                            {data.reviewSummary.missingDocuments.join(', ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100">
+                      All required KYC answers and documents are present.
+                    </div>
+                  )}
+
+                  {data.reviewSummary.recommendedMissingAnswers.length ||
+                  data.reviewSummary.recommendedMissingDocuments.length ? (
+                    <div className="mt-4 rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-sm text-futurex-muted">
+                      <div className="font-semibold text-futurex-ink">
+                        Reviewer follow up
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {data.reviewSummary.recommendedMissingAnswers.length ? (
+                          <div>
+                            Optional profile or wealth details not provided:{' '}
+                            {data.reviewSummary.recommendedMissingAnswers.join(
+                              ', '
+                            )}
+                          </div>
+                        ) : null}
+                        {data.reviewSummary.recommendedMissingDocuments.length ? (
+                          <div>
+                            Suggested supporting evidence not uploaded:{' '}
+                            {data.reviewSummary.recommendedMissingDocuments.join(
+                              ', '
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </>
-          ) : null}
-        </div>
+            </div>
+
+            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                Documents
+              </div>
+              <div className="mt-4 space-y-4">
+                {Object.keys(documentsByGroup).length ? (
+                  Object.entries(documentsByGroup).map(([groupLabel, documents]) => (
+                    <div key={groupLabel}>
+                      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-futurex-gold">
+                        {groupLabel}
+                      </div>
+                      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                        {documents.map((document) => {
+                          const documentUrl = documentUrls[document.filename];
+                          const label = humanizeStoredKycDocType(document.docType);
+
+                          return (
+                            <div
+                              key={document.filename}
+                              className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4"
+                            >
+                              <div className="text-sm font-semibold text-futurex-ink">
+                                {label}
+                              </div>
+                              <div className="mt-1 text-xs text-futurex-muted">
+                                Uploaded{' '}
+                                {new Date(
+                                  document.uploadedAt * 1000
+                                ).toLocaleString()}
+                              </div>
+
+                              {documentUrl ? (
+                                isImageDocument(document.filename) ? (
+                                  <a
+                                    href={documentUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-3 block"
+                                  >
+                                    <img
+                                      src={documentUrl}
+                                      alt={label}
+                                      className="max-h-[200px] w-full rounded-xl border border-futurex-line object-cover"
+                                    />
+                                  </a>
+                                ) : (
+                                  <a
+                                    href={documentUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-3 inline-flex rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+                                  >
+                                    View {label} -&gt;
+                                  </a>
+                                )
+                              ) : (
+                                <div className="mt-3 text-sm text-futurex-muted">
+                                  Secure preview unavailable.
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-sm text-futurex-muted">
+                    No KYC documents have been uploaded yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                  Conversation history
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConversation((current) => !current)}
+                  className="rounded-full border border-futurex-line px-3 py-1.5 text-xs text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold"
+                >
+                  {showConversation ? 'Hide messages' : 'Show last 10'}
+                </button>
+              </div>
+
+              {showConversation ? (
+                <div className="mt-4 space-y-3">
+                  {data.messages.length ? (
+                    data.messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-futurex-gold">
+                            {message.role}
+                          </div>
+                          <div className="text-xs text-futurex-muted">
+                            {new Date(
+                              message.createdAt * 1000
+                            ).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-futurex-ink">
+                          {message.content}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-4 text-sm text-futurex-muted">
+                      No conversation history available.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                Decision
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => submitDecision('approved')}
+                  disabled={Boolean(submittingDecision)}
+                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {submittingDecision === 'approved'
+                    ? 'Approving...'
+                    : 'Approve'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRejectMode((current) => !current)}
+                  disabled={Boolean(submittingDecision)}
+                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {rejectMode ? 'Cancel rejection' : 'Reject'}
+                </button>
+              </div>
+
+              {rejectMode ? (
+                <div className="mt-4 space-y-3">
+                  <div className="text-sm text-futurex-muted">
+                    Reason for rejection (required)
+                  </div>
+                  <input
+                    type="text"
+                    value={rejectReason}
+                    onChange={(event) => setRejectReason(event.target.value)}
+                    placeholder="Explain what needs to be corrected or resubmitted"
+                    className="w-full rounded-xl border border-futurex-line bg-futurex-surface px-4 py-3 text-futurex-ink outline-none transition placeholder:text-futurex-muted focus:border-futurex-gold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => submitDecision('rejected')}
+                    disabled={
+                      Boolean(submittingDecision) || !rejectReason.trim()
+                    }
+                    className="rounded-full border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
+                  >
+                    {submittingDecision === 'rejected'
+                      ? 'Rejecting...'
+                      : 'Confirm rejection'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }

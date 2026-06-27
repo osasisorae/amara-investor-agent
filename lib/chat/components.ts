@@ -24,6 +24,18 @@ import {
   KYC_DOCUMENT_OPTIONS,
   type KycPrimaryDocumentType,
 } from '@/lib/kyc/config';
+import {
+  getKycSourceOfFundsLabel,
+  getRequiredAdditionalKycDocuments,
+  KYC_PAYMENT_METHOD_OPTIONS,
+  KYC_RISK_DECLARATION_DEFINITIONS,
+  KYC_SOURCE_OF_FUNDS_OPTIONS,
+  type KycAdditionalDocumentRequirement,
+  type KycPaymentMethod,
+  type KycRiskDeclarationField,
+  type KycSourceOfFundsType,
+  type KycYesNoValue,
+} from '@/lib/kyc/requirements';
 
 export type AgentMessageType =
   | 'text'
@@ -35,8 +47,13 @@ export type AgentMessageType =
   | 'kyc_prompt'
   | 'kyc_consent'
   | 'kyc_personal_details'
+  | 'kyc_investor_profile'
   | 'kyc_document_selector'
   | 'kyc_upload'
+  | 'kyc_funding_source'
+  | 'kyc_additional_uploads'
+  | 'kyc_risk_declarations'
+  | 'kyc_payment_account'
   | 'kyc_submitted'
   | 'deal_brief'
   | 'spv_structure'
@@ -161,10 +178,58 @@ export interface KycDocumentSelectorComponentData {
   }>;
 }
 
+export interface KycInvestorProfileComponentData {
+  title: string;
+  occupation?: string;
+  employerOrBusinessName?: string;
+  employerOrBusinessAddress?: string;
+  taxResidencyCountry?: string;
+  taxIdentificationNumber?: string;
+}
+
 export interface KycUploadComponentData {
   title: string;
   documentType: KycPrimaryDocumentType;
   documentTypeLabel: string;
+}
+
+export interface KycFundingSourceComponentData {
+  title: string;
+  options: Array<{
+    value: KycSourceOfFundsType;
+    label: string;
+  }>;
+  sourceOfFundsType?: KycSourceOfFundsType;
+  sourceOfFundsSummary?: string;
+  sourceOfWealthSummary?: string;
+}
+
+export interface KycAdditionalUploadsComponentData {
+  title: string;
+  sourceOfFundsType: KycSourceOfFundsType;
+  sourceOfFundsLabel: string;
+  requiredDocuments: KycAdditionalDocumentRequirement[];
+}
+
+export interface KycRiskDeclarationsComponentData {
+  title: string;
+  declarations: Array<{
+    key: KycRiskDeclarationField;
+    label: string;
+    description: string;
+  }>;
+}
+
+export interface KycPaymentAccountComponentData {
+  title: string;
+  fundingMethods: Array<{
+    value: KycPaymentMethod;
+    label: string;
+  }>;
+  expectedFundingMethod?: KycPaymentMethod;
+  expectedFundingBankCountry?: string;
+  expectedFundingAccountName?: string;
+  paymentFromOwnAccount?: KycYesNoValue;
 }
 
 export interface KycSubmittedComponentData {
@@ -308,8 +373,13 @@ export interface UIComponentDataMap {
   kyc_prompt: KycPromptComponentData;
   kyc_consent: KycConsentComponentData;
   kyc_personal_details: KycPersonalDetailsComponentData;
+  kyc_investor_profile: KycInvestorProfileComponentData;
   kyc_document_selector: KycDocumentSelectorComponentData;
   kyc_upload: KycUploadComponentData;
+  kyc_funding_source: KycFundingSourceComponentData;
+  kyc_additional_uploads: KycAdditionalUploadsComponentData;
+  kyc_risk_declarations: KycRiskDeclarationsComponentData;
+  kyc_payment_account: KycPaymentAccountComponentData;
   kyc_submitted: KycSubmittedComponentData;
   deal_brief: DealBriefCardComponentData;
   spv_structure: SpvStructureCardComponentData;
@@ -353,8 +423,13 @@ export function isUIComponentType(value: string): value is UIComponentType {
     value === 'kyc_prompt' ||
     value === 'kyc_consent' ||
     value === 'kyc_personal_details' ||
+    value === 'kyc_investor_profile' ||
     value === 'kyc_document_selector' ||
     value === 'kyc_upload' ||
+    value === 'kyc_funding_source' ||
+    value === 'kyc_additional_uploads' ||
+    value === 'kyc_risk_declarations' ||
+    value === 'kyc_payment_account' ||
     value === 'kyc_submitted' ||
     value === 'deal_brief' ||
     value === 'spv_structure' ||
@@ -416,11 +491,11 @@ export function buildKycPromptData(): KycPromptComponentData {
   return {
     title: 'Upload your KYC documents',
     description:
-      'When you are ready, upload the core documents below right here in the conversation.',
+      'When you are ready, share the core identity details below right here in the conversation. Supporting source of funds evidence can be added now or clarified during human review.',
     requirements: [
       { key: 'id', label: 'Government ID' },
       { key: 'residence', label: 'Proof of residence' },
-      { key: 'funds', label: 'Proof of funds', optional: true },
+      { key: 'funds', label: 'Supporting source of funds evidence', optional: true },
     ],
   };
 }
@@ -432,11 +507,12 @@ export function buildKycConsentData(): KycConsentComponentData {
       {
         label: 'What is collected',
         value:
-          'Full name, government ID, proof of address, and source of funds.',
+          'Identity details, any investor profile or tax details you choose to share, proof of address, your source of funds explanation, any supporting evidence you upload, risk declarations, and the account expected to send your investment.',
       },
       {
         label: 'Why',
-        value: 'ISA 2025 compliance and investor verification.',
+        value:
+          'ISA 2025 compliance, investor verification, sanctions and PEP screening, and account ownership verification.',
       },
       {
         label: 'Who processes it',
@@ -473,13 +549,69 @@ export function buildKycDocumentSelectorData(): KycDocumentSelectorComponentData
   };
 }
 
+export function buildKycInvestorProfileData(
+  defaults: Partial<KycInvestorProfileComponentData> = {}
+): KycInvestorProfileComponentData {
+  return {
+    title: 'Add your investor profile details',
+    occupation: defaults.occupation || '',
+    employerOrBusinessName: defaults.employerOrBusinessName || '',
+    employerOrBusinessAddress: defaults.employerOrBusinessAddress || '',
+    taxResidencyCountry: defaults.taxResidencyCountry || '',
+    taxIdentificationNumber: defaults.taxIdentificationNumber || '',
+  };
+}
+
 export function buildKycUploadData(
   documentType: KycPrimaryDocumentType = 'passport'
 ): KycUploadComponentData {
   return {
-    title: 'Upload your KYC documents',
+    title: 'Upload your identity documents',
     documentType,
     documentTypeLabel: getKycDocumentLabel(documentType),
+  };
+}
+
+export function buildKycFundingSourceData(
+  defaults: Partial<KycFundingSourceComponentData> = {}
+): KycFundingSourceComponentData {
+  return {
+    title: 'How will you fund this investment',
+    options: [...KYC_SOURCE_OF_FUNDS_OPTIONS],
+    sourceOfFundsType: defaults.sourceOfFundsType,
+    sourceOfFundsSummary: defaults.sourceOfFundsSummary || '',
+    sourceOfWealthSummary: defaults.sourceOfWealthSummary || '',
+  };
+}
+
+export function buildKycAdditionalUploadsData(
+  sourceOfFundsType: KycSourceOfFundsType = 'salary'
+): KycAdditionalUploadsComponentData {
+  return {
+    title: 'Upload any source of funds evidence you already have',
+    sourceOfFundsType,
+    sourceOfFundsLabel: getKycSourceOfFundsLabel(sourceOfFundsType),
+    requiredDocuments: getRequiredAdditionalKycDocuments(sourceOfFundsType),
+  };
+}
+
+export function buildKycRiskDeclarationsData(): KycRiskDeclarationsComponentData {
+  return {
+    title: 'Confirm the risk declarations below',
+    declarations: [...KYC_RISK_DECLARATION_DEFINITIONS],
+  };
+}
+
+export function buildKycPaymentAccountData(
+  defaults: Partial<KycPaymentAccountComponentData> = {}
+): KycPaymentAccountComponentData {
+  return {
+    title: 'Confirm the account that will send your funds',
+    fundingMethods: [...KYC_PAYMENT_METHOD_OPTIONS],
+    expectedFundingMethod: defaults.expectedFundingMethod,
+    expectedFundingBankCountry: defaults.expectedFundingBankCountry || '',
+    expectedFundingAccountName: defaults.expectedFundingAccountName || '',
+    paymentFromOwnAccount: defaults.paymentFromOwnAccount,
   };
 }
 
@@ -558,10 +690,20 @@ export function buildDefaultComponentData(
       return buildKycConsentData();
     case 'kyc_personal_details':
       return buildKycPersonalDetailsData();
+    case 'kyc_investor_profile':
+      return buildKycInvestorProfileData();
     case 'kyc_document_selector':
       return buildKycDocumentSelectorData();
     case 'kyc_upload':
       return buildKycUploadData();
+    case 'kyc_funding_source':
+      return buildKycFundingSourceData();
+    case 'kyc_additional_uploads':
+      return buildKycAdditionalUploadsData();
+    case 'kyc_risk_declarations':
+      return buildKycRiskDeclarationsData();
+    case 'kyc_payment_account':
+      return buildKycPaymentAccountData();
     case 'kyc_submitted':
       return buildKycSubmittedData();
     case 'deal_brief':
@@ -617,10 +759,20 @@ export function getComponentFallbackText(
       return '[ui:kyc_consent] KYC consent';
     case 'kyc_personal_details':
       return '[ui:kyc_personal_details] KYC personal details';
+    case 'kyc_investor_profile':
+      return '[ui:kyc_investor_profile] KYC investor profile';
     case 'kyc_document_selector':
       return '[ui:kyc_document_selector] KYC document selector';
     case 'kyc_upload':
       return '[ui:kyc_upload] KYC upload';
+    case 'kyc_funding_source':
+      return '[ui:kyc_funding_source] KYC funding source';
+    case 'kyc_additional_uploads':
+      return '[ui:kyc_additional_uploads] Source of funds uploads';
+    case 'kyc_risk_declarations':
+      return '[ui:kyc_risk_declarations] Risk declarations';
+    case 'kyc_payment_account':
+      return '[ui:kyc_payment_account] Payment account verification';
     case 'kyc_submitted':
       return '[ui:kyc_submitted] KYC submitted';
     case 'deal_brief':

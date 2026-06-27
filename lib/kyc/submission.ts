@@ -5,12 +5,24 @@ import { markKYCSubmitted } from '@/lib/db/leads';
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import {
   detectDocumentTypeFromStoredDocTypes,
-  getRequiredStoredKycDocTypes,
   getKycDocumentLabel,
-  KYC_PERSONAL_DETAIL_FIELDS,
+  getRequiredStoredKycDocTypes,
 } from '@/lib/kyc/config';
-import { getAdminKycSubmissionEmailTemplate } from '@/lib/email/templates';
+import {
+  getAdminKycSubmissionEmailTemplate,
+} from '@/lib/email/templates';
 import { sendEmail } from '@/lib/email/resend-client';
+import {
+  getEnhancedDueDiligenceFlags,
+  getKycRiskLevel,
+  getRequiredAdditionalKycDocTypes,
+  humanizeKycAnswerField,
+  humanizeKycDocumentType,
+  KYC_MINIMUM_REQUIRED_ANSWER_FIELDS,
+  KYC_REVIEWER_RECOMMENDED_ANSWER_FIELDS,
+  isKycSourceOfFundsType,
+  type KycRiskLevel,
+} from '@/lib/kyc/requirements';
 
 const ADMIN_ALERT_EMAIL =
   process.env.ADMIN_ALERT_EMAIL || 'osasisorae@gmail.com';
@@ -18,71 +30,72 @@ const ADMIN_ALERT_EMAIL =
 export interface KycSubmissionValidationResult {
   valid: boolean;
   documentTypeLabel?: string;
-  missingPersonalDetails: string[];
+  missingAnswers: string[];
   missingDocuments: string[];
-}
-
-function humanizePersonalDetailField(field: string): string {
-  switch (field) {
-    case 'full_legal_name':
-      return 'full legal name';
-    case 'date_of_birth':
-      return 'date of birth';
-    case 'nationality':
-      return 'nationality';
-    case 'country_of_residence':
-      return 'country of residence';
-    case 'phone_number':
-      return 'phone number';
-    default:
-      return field.replace(/_/g, ' ');
-  }
-}
-
-function humanizeStoredDocType(docType: string): string {
-  return docType.replace(/_/g, ' ');
+  recommendedMissingAnswers: string[];
+  recommendedMissingDocuments: string[];
+  riskLevel: KycRiskLevel;
+  requiresEnhancedReview: boolean;
+  enhancedReviewFlags: string[];
 }
 
 export async function validateKycSubmission(
   leadId: string
 ): Promise<KycSubmissionValidationResult> {
+  const latestAnswers = await getLatestQualificationAnswerMap(leadId);
+  const enhancedReviewFlags = getEnhancedDueDiligenceFlags(latestAnswers);
+  const riskLevel = getKycRiskLevel(latestAnswers);
   const hasConsent = await hasAuditEventForLead(leadId, 'kyc_consent_given');
 
-  if (!hasConsent) {
-    return {
-      valid: false,
-      missingPersonalDetails: [],
-      missingDocuments: [],
-    };
-  }
-
-  const latestAnswers = await getLatestQualificationAnswerMap(leadId);
-  const missingPersonalDetails = KYC_PERSONAL_DETAIL_FIELDS.filter(
+  const missingAnswers = KYC_MINIMUM_REQUIRED_ANSWER_FIELDS.filter(
     (field) => !latestAnswers[field]?.answer?.trim()
-  ).map(humanizePersonalDetailField);
+  ).map(humanizeKycAnswerField);
+  const recommendedMissingAnswers =
+    KYC_REVIEWER_RECOMMENDED_ANSWER_FIELDS.filter(
+      (field) => !latestAnswers[field]?.answer?.trim()
+    ).map(humanizeKycAnswerField);
 
   const documents = await getKycDocumentsByLeadId(leadId);
   const docTypes = documents.map((document) => document.docType);
   const documentType = detectDocumentTypeFromStoredDocTypes(docTypes);
 
+  const missingDocuments: string[] = [];
+
   if (!documentType) {
-    return {
-      valid: false,
-      missingPersonalDetails,
-      missingDocuments: ['identity document selection'],
-    };
+    missingDocuments.push('identity document selection');
+  } else {
+    missingDocuments.push(
+      ...getRequiredStoredKycDocTypes(documentType)
+        .filter((requiredDocType) => !docTypes.includes(requiredDocType))
+        .map(humanizeKycDocumentType)
+    );
   }
 
-  const requiredDocumentTypes = getRequiredStoredKycDocTypes(documentType);
-  const missingDocuments = requiredDocumentTypes
-    .filter((requiredDocType) => !docTypes.includes(requiredDocType))
-    .map(humanizeStoredDocType);
+  const sourceOfFundsType = latestAnswers.source_of_funds_type?.answer?.trim();
+  const recommendedMissingDocuments: string[] = [];
+  if (sourceOfFundsType && isKycSourceOfFundsType(sourceOfFundsType)) {
+    recommendedMissingDocuments.push(
+      ...getRequiredAdditionalKycDocTypes(sourceOfFundsType)
+        .filter((requiredDocType) => !docTypes.includes(requiredDocType))
+        .map(humanizeKycDocumentType)
+    );
+  }
 
   return {
-    valid: missingPersonalDetails.length === 0 && missingDocuments.length === 0,
-    documentTypeLabel: getKycDocumentLabel(documentType),
-    missingPersonalDetails,
+    valid:
+      hasConsent &&
+      missingAnswers.length === 0 &&
+      missingDocuments.length === 0,
+    documentTypeLabel: documentType
+      ? getKycDocumentLabel(documentType)
+      : undefined,
+    missingAnswers,
     missingDocuments,
+    recommendedMissingAnswers,
+    recommendedMissingDocuments,
+    riskLevel,
+    requiresEnhancedReview: enhancedReviewFlags.length > 0,
+    enhancedReviewFlags,
   };
 }
 
@@ -102,8 +115,20 @@ export async function completeKycSubmission(params: {
     eventType: 'kyc_submitted',
     metadata: {
       document_type: validation.documentTypeLabel,
+      risk_level: validation.riskLevel,
     },
   });
+
+  if (validation.requiresEnhancedReview) {
+    await logAuditEvent({
+      leadId: params.lead.id,
+      eventType: 'kyc_enhanced_review_flagged',
+      metadata: {
+        risk_level: validation.riskLevel,
+        flags: validation.enhancedReviewFlags,
+      },
+    });
+  }
 
   const appUrl =
     params.appUrl?.replace(/\/$/, '') ||

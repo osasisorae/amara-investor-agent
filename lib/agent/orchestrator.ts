@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto';
 import {
+  buildKycAdditionalUploadsData,
   buildKycConsentData,
   buildKycDocumentSelectorData,
   buildDealCardData,
   buildDocumentListData,
   buildDefaultComponentData,
+  buildKycFundingSourceData,
+  buildKycInvestorProfileData,
+  buildKycPaymentAccountData,
   buildKycPersonalDetailsData,
   buildPipelineStatusData,
+  buildKycRiskDeclarationsData,
   buildKycSubmittedData,
   buildKycUploadData,
   createComponentMetadata,
@@ -49,6 +54,12 @@ import {
   parseKycDocumentTypeFromMessage,
   type KycPrimaryDocumentType,
 } from '@/lib/kyc/config';
+import {
+  getKycSourceOfFundsLabel,
+  isKycPaymentMethod,
+  isKycSourceOfFundsType,
+  isKycYesNoValue,
+} from '@/lib/kyc/requirements';
 import { getSystemPromptForStage } from './prompts';
 import {
   assessQualificationResponse,
@@ -97,7 +108,12 @@ const AUDIT_EVENT_TYPES: AuditEventType[] = [
   'human_review_requested',
   'kyc_consent_given',
   'kyc_personal_details_submitted',
+  'kyc_investor_profile_submitted',
+  'kyc_funding_source_submitted',
+  'kyc_risk_declarations_submitted',
+  'kyc_payment_account_submitted',
   'kyc_document_uploaded',
+  'kyc_enhanced_review_flagged',
   'kyc_submitted',
   'kyc_approved',
   'kyc_rejected',
@@ -251,8 +267,13 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
               'kyc_prompt',
               'kyc_consent',
               'kyc_personal_details',
+              'kyc_investor_profile',
               'kyc_document_selector',
               'kyc_upload',
+              'kyc_funding_source',
+              'kyc_additional_uploads',
+              'kyc_risk_declarations',
+              'kyc_payment_account',
               'kyc_submitted',
               'deal_brief',
               'spv_structure',
@@ -426,6 +447,16 @@ Operational rules:
 
 Operational rules:
 - Use \`emit_ui_component\` for every structured KYC step instead of describing forms in plain text.
+- Keep the investor on one step at a time in this exact order: consent, personal details, investor profile, ID selection, identity upload, funding source, source-of-funds uploads, risk declarations, payment account, human review.
+- After consent is confirmed, log \`kyc_consent_given\` if it is not already recorded.
+- After the investor confirms personal details submitted, move them to \`kyc_investor_profile\`.
+- After the investor confirms investor profile submitted, move them to \`kyc_document_selector\`.
+- After the investor selects an ID, emit \`kyc_upload\` for that document type only.
+- After the investor confirms identity documents uploaded, move them to \`kyc_funding_source\`.
+- After the investor confirms funding source submitted, move them to \`kyc_additional_uploads\` using the declared source of funds already on file.
+- After the investor confirms funding documents uploaded, move them to \`kyc_risk_declarations\`.
+- After the investor confirms risk declarations submitted, move them to \`kyc_payment_account\`.
+- After the investor confirms payment account submitted, the system will validate the full package and submit it for human review if complete.
 - If the investor asks an investment question during KYC, call \`search_knowledge_base\`, answer briefly from the result, then redirect them back to the KYC step they are currently on.
 - If you notify the FutureX team by email, use \`send_email\` with \`to: "admin"\`.
 - If you need to reassure the investor after submission, keep it concise and remind them the review window is 2 business days.
@@ -853,6 +884,10 @@ export class AgentOrchestrator {
       return this.handleKycPersonalDetailsSubmitted(lead);
     }
 
+    if (normalizedMessage === 'investor profile submitted') {
+      return this.handleKycInvestorProfileSubmitted(lead);
+    }
+
     const selectedDocumentType = parseKycDocumentTypeFromMessage(message);
     if (
       selectedDocumentType &&
@@ -863,7 +898,26 @@ export class AgentOrchestrator {
       return this.handleKycDocumentSelection(lead, selectedDocumentType);
     }
 
-    if (normalizedMessage === 'all documents uploaded') {
+    if (normalizedMessage === 'identity documents uploaded') {
+      return this.handleKycIdentityDocumentsSubmitted(lead);
+    }
+
+    if (normalizedMessage === 'funding source submitted') {
+      return this.handleKycFundingSourceSubmitted(lead);
+    }
+
+    if (normalizedMessage === 'funding documents uploaded') {
+      return this.handleKycFundingDocumentsSubmitted(lead);
+    }
+
+    if (normalizedMessage === 'risk declarations submitted') {
+      return this.handleKycRiskDeclarationsSubmitted(lead);
+    }
+
+    if (
+      normalizedMessage === 'payment account submitted' ||
+      normalizedMessage === 'all documents uploaded'
+    ) {
       return this.handleKycSubmissionReady(lead, context);
     }
 
@@ -879,6 +933,7 @@ export class AgentOrchestrator {
 
   private async handleKycConsent(lead: Lead): Promise<HandlerResult> {
     const alreadyLogged = await hasAuditEventForLead(lead.id, 'kyc_consent_given');
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
 
     if (!alreadyLogged) {
       await logAuditEvent({
@@ -890,15 +945,19 @@ export class AgentOrchestrator {
     return {
       emissions: [
         this.emitTextMessage(
-          "Thanks. Let's capture your personal details first, then we'll move to the document uploads."
+          "Thanks. We'll start with your core identity and residence details, then move step by step through the rest of the compliance package."
         ),
         this.emitComponentMessage(
           lead.id,
           'kyc_personal_details',
           buildKycPersonalDetailsData({
-            fullLegalName: lead.full_name || '',
-            countryOfResidence: lead.country || '',
-            phoneNumber: lead.phone || '',
+            fullLegalName:
+              latestAnswers.full_legal_name?.answer || lead.full_name || '',
+            dateOfBirth: latestAnswers.date_of_birth?.answer || '',
+            nationality: latestAnswers.nationality?.answer || '',
+            countryOfResidence:
+              latestAnswers.country_of_residence?.answer || lead.country || '',
+            phoneNumber: latestAnswers.phone_number?.answer || lead.phone || '',
           })
         ),
       ],
@@ -906,6 +965,35 @@ export class AgentOrchestrator {
   }
 
   private async handleKycPersonalDetailsSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          "Great. Next I need a bit more background on you as the investor so the compliance review is tied to the right person and funding profile."
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_investor_profile',
+          buildKycInvestorProfileData({
+            occupation: latestAnswers.occupation?.answer || '',
+            employerOrBusinessName:
+              latestAnswers.employer_or_business_name?.answer || '',
+            employerOrBusinessAddress:
+              latestAnswers.employer_or_business_address?.answer || '',
+            taxResidencyCountry:
+              latestAnswers.tax_residency_country?.answer || '',
+            taxIdentificationNumber:
+              latestAnswers.tax_identification_number?.answer || '',
+          })
+        ),
+      ],
+    };
+  }
+
+  private async handleKycInvestorProfileSubmitted(
     lead: Lead
   ): Promise<HandlerResult> {
     return {
@@ -946,12 +1034,138 @@ export class AgentOrchestrator {
         this.emitTextMessage(
           `Perfect. Upload the files for your ${getKycDocumentLabel(
             documentType
-          )} and the supporting compliance documents below.`
+          )} and your proof of address below.`
         ),
         this.emitComponentMessage(
           lead.id,
           'kyc_upload',
           buildKycUploadData(documentType)
+        ),
+      ],
+    };
+  }
+
+  private async handleKycIdentityDocumentsSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+    const rawSourceOfFundsType = latestAnswers.source_of_funds_type?.answer || '';
+    const sourceOfFundsType = isKycSourceOfFundsType(rawSourceOfFundsType)
+      ? rawSourceOfFundsType
+      : undefined;
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          'Great. Now tell me exactly how this specific FutureX investment will be funded.'
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_funding_source',
+          buildKycFundingSourceData({
+            sourceOfFundsType,
+            sourceOfFundsSummary:
+              latestAnswers.source_of_funds_summary?.answer || '',
+            sourceOfWealthSummary:
+              latestAnswers.source_of_wealth_summary?.answer || '',
+          })
+        ),
+      ],
+    };
+  }
+
+  private async handleKycFundingSourceSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+    const rawSourceOfFundsType = latestAnswers.source_of_funds_type?.answer || '';
+
+    if (!isKycSourceOfFundsType(rawSourceOfFundsType)) {
+      return {
+        emissions: [
+          this.emitTextMessage(
+            'I still need your source of funds selection before I can request the supporting evidence.'
+          ),
+          this.emitComponentMessage(
+            lead.id,
+            'kyc_funding_source',
+            buildKycFundingSourceData({
+              sourceOfFundsSummary:
+                latestAnswers.source_of_funds_summary?.answer || '',
+              sourceOfWealthSummary:
+                latestAnswers.source_of_wealth_summary?.answer || '',
+            })
+          ),
+        ],
+      };
+    }
+
+    const sourceOfFundsType = rawSourceOfFundsType;
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          `Understood. Upload any supporting evidence you already have for ${getKycSourceOfFundsLabel(
+            sourceOfFundsType
+          ).toLowerCase()} and the account that will send the funds. If anything is still missing, compliance can request it later.`
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_additional_uploads',
+          buildKycAdditionalUploadsData(sourceOfFundsType)
+        ),
+      ],
+    };
+  }
+
+  private async handleKycFundingDocumentsSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    return {
+      emissions: [
+        this.emitTextMessage(
+          'Thanks. I just need a few risk declarations before the package can move to human review.'
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_risk_declarations',
+          buildKycRiskDeclarationsData()
+        ),
+      ],
+    };
+  }
+
+  private async handleKycRiskDeclarationsSubmitted(
+    lead: Lead
+  ): Promise<HandlerResult> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+    const rawExpectedFundingMethod =
+      latestAnswers.expected_funding_method?.answer || '';
+    const expectedFundingMethod = isKycPaymentMethod(rawExpectedFundingMethod)
+      ? rawExpectedFundingMethod
+      : undefined;
+    const rawPaymentFromOwnAccount =
+      latestAnswers.payment_from_own_account?.answer || '';
+    const paymentFromOwnAccount = isKycYesNoValue(rawPaymentFromOwnAccount)
+      ? rawPaymentFromOwnAccount
+      : undefined;
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          'Final step. Confirm the account and payment path that will actually send the investment funds.'
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'kyc_payment_account',
+          buildKycPaymentAccountData({
+            expectedFundingMethod,
+            expectedFundingBankCountry:
+              latestAnswers.expected_funding_bank_country?.answer || '',
+            expectedFundingAccountName:
+              latestAnswers.expected_funding_account_name?.answer || '',
+            paymentFromOwnAccount,
+          })
         ),
       ],
     };
@@ -968,10 +1182,7 @@ export class AgentOrchestrator {
     });
 
     if (!result.valid) {
-      const missingItems = [
-        ...result.missingPersonalDetails,
-        ...result.missingDocuments,
-      ];
+      const missingItems = [...result.missingAnswers, ...result.missingDocuments];
 
       return {
         emissions: [
@@ -979,7 +1190,7 @@ export class AgentOrchestrator {
             missingItems.length
               ? `You're close, but I still need: ${missingItems.join(
                   ', '
-                )}. Once those are in, tap Submit KYC again.`
+                )}. Once those are in, continue the KYC flow from the current step.`
               : 'I still need your recorded consent before documents can be submitted. Please confirm the consent step first.'
           ),
         ],
@@ -995,7 +1206,16 @@ export class AgentOrchestrator {
     return {
       emissions: [
         this.emitTextMessage(
-          "Thank you. Your KYC package has been submitted to the FutureX compliance team for review."
+          result.requiresEnhancedReview
+            ? `Thank you. Your KYC package has been submitted for enhanced human review because it includes higher risk compliance factors: ${result.enhancedReviewFlags.join(
+                ', '
+              )}.`
+            : 'Thank you. Your KYC package has been submitted to the FutureX compliance team for review.'
+        ),
+        this.emitComponentMessage(
+          lead.id,
+          'pipeline_status',
+          buildPipelineStatusData('pending_human_review')
         ),
         this.emitComponentMessage(
           lead.id,

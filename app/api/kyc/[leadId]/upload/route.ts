@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getLeadById } from '@/lib/db/leads';
 import { logAuditEvent } from '@/lib/db/audit';
 import { hasAuditEventForLead, saveKycDocument } from '@/lib/db/kyc';
+import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { orchestrator } from '@/lib/agent/orchestrator';
 import { toChatMessages } from '@/lib/chat/messages';
 import {
@@ -10,6 +11,11 @@ import {
   normalizeKycDocumentType,
   type KycUploadSlot,
 } from '@/lib/kyc/config';
+import {
+  getRequiredAdditionalKycDocTypes,
+  isKycAdditionalDocumentType,
+  isKycSourceOfFundsType,
+} from '@/lib/kyc/requirements';
 import { getR2ConfigStatus, uploadFile } from '@/lib/storage/r2';
 import { verifyInvestorSession } from '@/lib/investor-auth';
 
@@ -20,13 +26,6 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/png',
   'application/pdf',
 ]);
-const ALLOWED_DOC_TYPES = new Set<KycUploadSlot>([
-  'document_front',
-  'document_back',
-  'proof_of_address',
-  'source_of_funds',
-]);
-
 function getFileExtension(file: File): string | null {
   const extensionFromName = file.name.split('.').pop()?.toLowerCase();
   if (extensionFromName && ALLOWED_EXTENSIONS.has(extensionFromName)) {
@@ -59,14 +58,22 @@ function getContentType(extension: string): string {
   }
 }
 
-function sanitizeDocType(value: FormDataEntryValue | null): KycUploadSlot | null {
+function sanitizeDocType(
+  value: FormDataEntryValue | null
+): KycUploadSlot | string | null {
   if (typeof value !== 'string') {
     return null;
   }
 
-  return ALLOWED_DOC_TYPES.has(value as KycUploadSlot)
-    ? (value as KycUploadSlot)
-    : null;
+  if (
+    value === 'document_front' ||
+    value === 'document_back' ||
+    value === 'proof_of_address'
+  ) {
+    return value;
+  }
+
+  return isKycAdditionalDocumentType(value) ? value : null;
 }
 
 export async function POST(
@@ -146,6 +153,34 @@ export async function POST(
       );
     }
 
+    if (isKycAdditionalDocumentType(docType)) {
+      const latestAnswers = await getLatestQualificationAnswerMap(leadId);
+      const sourceOfFundsType = latestAnswers.source_of_funds_type?.answer?.trim();
+
+      if (!sourceOfFundsType || !isKycSourceOfFundsType(sourceOfFundsType)) {
+        return NextResponse.json(
+          {
+            error:
+              'Funding source details must be recorded before supporting funds evidence can be uploaded.',
+          },
+          { status: 400 }
+        );
+      }
+
+      const allowedAdditionalDocTypes =
+        getRequiredAdditionalKycDocTypes(sourceOfFundsType);
+
+      if (!allowedAdditionalDocTypes.includes(docType)) {
+        return NextResponse.json(
+          {
+            error:
+              'That document is not part of the current source of funds checklist. Refresh the chat and follow the latest KYC step.',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
       console.log('[KYC Upload] File too large:', fileEntry.size);
       return NextResponse.json(
@@ -166,9 +201,12 @@ export async function POST(
       );
     }
 
-    const storedDocType = docType.startsWith('document_') && selectedDocumentType
-      ? buildStoredKycDocType(selectedDocumentType, docType)
-      : docType;
+    const isIdentitySlot =
+      docType === 'document_front' || docType === 'document_back';
+    const storedDocType =
+      isIdentitySlot && selectedDocumentType
+        ? buildStoredKycDocType(selectedDocumentType, docType)
+        : docType;
     const timestamp = Date.now();
     const filename = `${leadId}-${storedDocType}-${timestamp}.${extension}`;
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
@@ -251,9 +289,13 @@ export async function PATCH(
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
       new URL(request.url).origin;
-    const response = await orchestrator.processMessage(lead, 'All documents uploaded', {
-      appUrl,
-    });
+    const response = await orchestrator.processMessage(
+      lead,
+      'Payment account submitted',
+      {
+        appUrl,
+      }
+    );
     const updatedLead = (await getLeadById(leadId)) || lead;
 
     return NextResponse.json({
