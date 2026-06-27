@@ -1,12 +1,9 @@
 import {
   MINIMUM_HOLD_YEARS,
-  MINIMUM_TICKET_NGN,
 } from '@/lib/agent/qualification';
 import {
   AGREEMENT_VERSION,
-  EXIT_STRATEGY,
   SPV_NAME,
-  TARGET_RETURN,
 } from '@/lib/agreement/template';
 
 const HTML_EMAIL_FOOTER = `
@@ -28,10 +25,32 @@ const PAYMENT_INSTRUCTIONS_HTML_FOOTER = `
 const PAYMENT_INSTRUCTIONS_TEXT_FOOTER =
   'FutureX Nexus Development Limited · investfuturex.com';
 
+function getEmailAssetBaseUrl(): string {
+  const configuredUrl =
+    process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || '';
+  const normalizedUrl = configuredUrl.replace(/\/$/, '');
+
+  if (
+    normalizedUrl &&
+    !normalizedUrl.includes('localhost') &&
+    !normalizedUrl.includes('127.0.0.1')
+  ) {
+    return normalizedUrl;
+  }
+
+  return 'https://amara.investfuturex.com';
+}
+
 function getEmailHeaderMarkup(): string {
+  const wordmarkUrl = `${getEmailAssetBaseUrl()}/futurex-wordmark-email.png`;
+
   return `
   <div class="header">
-    <h1 style="font-family:Georgia,serif;color:#111;">FutureX</h1>
+    <img
+      src="${wordmarkUrl}"
+      alt="FutureX"
+      style="display:block; width:auto; height:28px;"
+    />
   </div>
   `;
 }
@@ -141,61 +160,47 @@ export function getKYCApprovalEmailTemplate(params: {
   investorName: string;
   agreementLink: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'KYC Approved - Your Investment Agreement is Ready';
+  const subject = 'Your agreement is ready for review';
 
   const html = renderEmailLayout(
     `
-      <h2>Great news, ${params.investorName}!</h2>
-      
-      <p>Your KYC documents have been reviewed and <strong class="gold">approved</strong> by our compliance team. You're now ready to proceed with the investment agreement.</p>
-      
+      <h2>Your KYC review is complete, ${params.investorName}.</h2>
+
+      <p>Your documents have been reviewed and <strong class="gold">approved</strong> by the FutureX compliance team. You are now cleared to review and sign the investment agreement.</p>
+
       <div class="alert">
-        <strong>Next Step:</strong> Review and sign your investment agreement
+        <strong>Next step:</strong> review and sign your agreement using the secure link below.
       </div>
-      
-      <p>The agreement outlines:</p>
-      <ul>
-        <li>Your subscription into the ${SPV_NAME}</li>
-        <li>The minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms</li>
-        <li>Target return framing (${TARGET_RETURN}) and governance terms</li>
-        <li>Full risk disclosures</li>
-      </ul>
-      
-      <p>Please review the agreement carefully. Once you're ready to proceed, you'll sign electronically with an OTP verification sent to your email.</p>
-      
+
+      <p>The agreement contains your subscription into the ${SPV_NAME}, the minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms, governance provisions, and the full risk disclosures.</p>
+
+      <p>Please review it carefully. When you are ready to sign, you will verify with a one time code sent to your email.</p>
+
       <a href="${params.agreementLink}" class="cta">Review Agreement →</a>
-      
-      <p>If you have any questions, just reply to this email or continue our conversation in the chat.</p>
-      
-      <p><strong>Amara</strong><br>
-      FutureX Investor Agent<br>
-      <span class="gold">amara@investfuturex.com</span></p>
+
+      <p>If anything is unclear, continue the conversation in your deal room before signing.</p>
+
+      <p><strong>FutureX Compliance Team</strong></p>
     `,
     HTML_EMAIL_FOOTER
   );
 
   const text = `
-Great news, ${params.investorName}!
+Your KYC review is complete, ${params.investorName}.
 
-Your KYC documents have been reviewed and approved by our compliance team. You're now ready to proceed with the investment agreement.
+Your documents have been reviewed and approved by the FutureX compliance team. You are now cleared to review and sign the investment agreement.
 
-Next Step: Review and sign your investment agreement
+Next step: review and sign your agreement using the secure link below.
 
-The agreement outlines:
-- Your subscription into the ${SPV_NAME}
-- The minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms
-- Target return framing (${TARGET_RETURN}) and governance terms
-- Full risk disclosures
+The agreement contains your subscription into the ${SPV_NAME}, the minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms, governance provisions, and the full risk disclosures.
 
-Please review the agreement carefully. Once you're ready to proceed, you'll sign electronically with an OTP verification sent to your email.
+Please review it carefully. When you are ready to sign, you will verify with a one time code sent to your email.
 
 Review Agreement: ${params.agreementLink}
 
-If you have any questions, just reply to this email or continue our conversation in the chat.
+If anything is unclear, continue the conversation in your deal room before signing.
 
-Amara
-FutureX Investor Agent
-amara@investfuturex.com
+FutureX Compliance Team
 
 ${TEXT_EMAIL_FOOTER}
   `;
@@ -207,32 +212,30 @@ export function getDealRoomAccessEmailTemplate(params: {
   investorName: string;
   chatLink: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'You now have access to the FutureX deal room';
+  const subject = 'Your FutureX deal room is ready';
 
   const html = renderEmailLayout(
     `
       <h2>You&apos;re qualified, ${params.investorName}.</h2>
 
-      <p>You&apos;ve met the qualification criteria for the <strong class="gold">Akwa Ibom Hospitality Vehicle</strong>, and your deal room access is now active.</p>
+      <p>You&apos;ve met the qualification criteria for the <strong class="gold">Akwa Ibom Hospitality Vehicle</strong>. Your secure deal room is now open.</p>
 
       <div class="alert">
-        <strong>Continue here:</strong> use the same secure conversation link below to review materials and ask due diligence questions.
+        <strong>Next step:</strong> use the secure link below to review the opportunity materials and continue your diligence.
       </div>
 
-      <p>You can now use Amara to walk through:</p>
+      <p>Inside the deal room, you can:</p>
       <ul>
-        <li>The offering memorandum and opportunity summary</li>
-        <li>Key economics, risks, and timeline</li>
-        <li>Next-step onboarding and KYC requirements</li>
+        <li>Review the opportunity summary and supporting materials</li>
+        <li>Ask due diligence questions about the structure, risks, and timeline</li>
+        <li>Continue to onboarding and KYC when you are ready</li>
       </ul>
 
       <a href="${params.chatLink}" class="cta">Open the Deal Room →</a>
 
-      <p>If anything is unclear, reply in the chat and Amara will guide you from there.</p>
+      <p>If anything is unclear, continue the conversation from the same secure link.</p>
 
-      <p><strong>Amara</strong><br>
-      FutureX Investor Agent<br>
-      <span class="gold">amara@investfuturex.com</span></p>
+      <p><strong>FutureX Team</strong></p>
     `,
     HTML_EMAIL_FOOTER
   );
@@ -240,21 +243,20 @@ export function getDealRoomAccessEmailTemplate(params: {
   const text = `
 You're qualified, ${params.investorName}.
 
-You've met the qualification criteria for the Akwa Ibom Hospitality Vehicle, and your deal room access is now active.
+You've met the qualification criteria for the Akwa Ibom Hospitality Vehicle. Your secure deal room is now open.
 
-Continue here using the same secure conversation link:
+Next step: use the secure link below to review the opportunity materials and continue your diligence.
+
 ${params.chatLink}
 
-You can now use Amara to walk through:
-- The offering memorandum and opportunity summary
-- Key economics, risks, and timeline
-- Next-step onboarding and KYC requirements
+Inside the deal room, you can:
+- Review the opportunity summary and supporting materials
+- Ask due diligence questions about the structure, risks, and timeline
+- Continue to onboarding and KYC when you are ready
 
-If anything is unclear, reply in the chat and Amara will guide you from there.
+If anything is unclear, continue the conversation from the same secure link.
 
-Amara
-FutureX Investor Agent
-amara@investfuturex.com
+FutureX Team
 
 ${TEXT_EMAIL_FOOTER}
   `;
