@@ -62,7 +62,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create lead and trigger outreach
-    const lead = await createLead({ email: normalizedEmail, addedBy });
+    const lead = await createLead({
+      email: normalizedEmail,
+      addedBy,
+      fullName:
+        typeof fullName === 'string' && fullName.trim().length > 0
+          ? fullName.trim()
+          : undefined,
+    });
 
     // Log audit event
     await logAuditEvent({
@@ -74,7 +81,10 @@ export async function POST(request: NextRequest) {
     // Send outreach email
     const chatLink = `${process.env.NEXT_PUBLIC_APP_URL}/chat/${lead.id}`;
     const emailTemplate = getOutreachEmailTemplate({
-      investorEmail: normalizedEmail,
+      investorName:
+        typeof fullName === 'string' && fullName.trim().length > 0
+          ? fullName.trim()
+          : undefined,
       chatLink,
     });
 

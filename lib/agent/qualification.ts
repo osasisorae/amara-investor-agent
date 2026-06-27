@@ -109,7 +109,7 @@ function titleCaseWords(value: string): string {
 
 function extractLocation(value: string): string | undefined {
   const match = value.match(
-    /\b(?:based in|live in|located in|resident in|from|i(?:'m| am)? in)\s+([a-z ,'-]{2,40})/i
+    /\b(?:based in|based out of|live in|living in|stay in|staying in|located in|resident in|from|i(?:'m| am)? in|i stay in|i'm staying in|i am staying in)\s+([a-z ,'-]{2,40})/i
   );
 
   if (!match) {

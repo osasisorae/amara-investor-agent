@@ -88,62 +88,48 @@ function renderPlainTextParagraphs(body: string): string {
 }
 
 export function getOutreachEmailTemplate(params: {
-  investorEmail: string;
+  investorName?: string;
   chatLink: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'Welcome to FutureX - Let\'s Start the Conversation';
+  const subject = 'Your Private FutureX Access';
+  const greeting = params.investorName?.trim()
+    ? `Hi ${escapeHtml(params.investorName.trim().split(/\s+/)[0])},`
+    : 'Hi there,';
+  const textGreeting = params.investorName?.trim()
+    ? `Hi ${params.investorName.trim().split(/\s+/)[0]},`
+    : 'Hi there,';
 
   const html = renderEmailLayout(
     `
-      <h2>Hi there,</h2>
-      
-      <p>Your email was recently added to our investor offeree register by the FutureX team. I wanted to personally reach out and introduce myself.</p>
-      
-      <p>I'm <strong class="gold">Amara</strong>, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity - the <strong>Akwa Ibom Hospitality Vehicle</strong> - answer your questions, and make the entire process as smooth and transparent as possible.</p>
-      
-      <p>Here's what I'll help you with:</p>
-      <ul>
-        <li>Understanding if this investment fits your goals</li>
-        <li>Answering detailed questions about the deal structure, returns, and risks</li>
-        <li>Guiding you through KYC and compliance requirements</li>
-        <li>Providing full transparency at every step</li>
-      </ul>
-      
-      <p>This isn't a sales pitch. It's a conversation. If the opportunity doesn't fit, I'll tell you. If it does, I'll make sure you have everything you need to make an informed decision.</p>
-      
-      <a href="${params.chatLink}" class="cta">Start the Conversation →</a>
-      
-      <p>I look forward to hearing from you.</p>
-      
-      <p><strong>Amara</strong><br>
-      FutureX Investor Agent<br>
-      <span class="gold">amara@investfuturex.com</span></p>
+      <h2>${greeting}</h2>
+
+      <p>You were recently added by the FutureX team for private access to our current hospitality opportunity in Uyo, Akwa Ibom.</p>
+
+      <p>We have built a guided deal room where you can review the opportunity clearly, understand how the structure works, ask due diligence questions, and decide whether it is worth exploring further.</p>
+
+      <p>If it is not a fit, that will become clear quickly. If it is, the next steps are already there for you.</p>
+
+      <a href="${params.chatLink}" class="cta">Open the Private Deal Room →</a>
+
+      <p>Best,<br>
+      <strong>FutureX Team</strong></p>
     `,
     HTML_EMAIL_FOOTER
   );
 
   const text = `
-Hi there,
+${textGreeting}
 
-Your email was recently added to our investor offeree register by the FutureX team. I wanted to personally reach out and introduce myself.
+You were recently added by the FutureX team for private access to our current hospitality opportunity in Uyo, Akwa Ibom.
 
-I'm Amara, an AI agent built specifically to guide investors like you through the FutureX investment process. My role is to help you understand our current opportunity - the Akwa Ibom Hospitality Vehicle - answer your questions, and make the entire process as smooth and transparent as possible.
+We have built a guided deal room where you can review the opportunity clearly, understand how the structure works, ask due diligence questions, and decide whether it is worth exploring further.
 
-Here's what I'll help you with:
-- Understanding if this investment fits your goals
-- Answering detailed questions about the deal structure, returns, and risks
-- Guiding you through KYC and compliance requirements
-- Providing full transparency at every step
+If it is not a fit, that will become clear quickly. If it is, the next steps are already there for you.
 
-This isn't a sales pitch. It's a conversation. If the opportunity doesn't fit, I'll tell you. If it does, I'll make sure you have everything you need to make an informed decision.
+Open the private deal room: ${params.chatLink}
 
-Start the conversation: ${params.chatLink}
-
-I look forward to hearing from you.
-
-Amara
-FutureX Investor Agent
-amara@investfuturex.com
+Best,
+FutureX Team
 
 ${TEXT_EMAIL_FOOTER}
   `;
