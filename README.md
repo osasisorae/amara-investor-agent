@@ -2,7 +2,7 @@
 
 **Qwen Cloud Hackathon 2026 — Track 4: Autopilot Agent**
 
-Amara is an AI-powered investor onboarding agent for FutureX, a real estate syndication company targeting Nigerian diaspora investors. Named after the founder Chimamanda, Amara handles the full investor pipeline from first outreach to signed agreement — with human-in-the-loop checkpoints enforced by Nigerian securities law.
+Amara is an AI-powered investor onboarding agent for FutureX, a real estate syndication company targeting Nigerian diaspora investors. Named after the founder Chimara, Amara handles the full investor pipeline from first outreach to signed agreement — with human-in-the-loop checkpoints enforced by Nigerian securities law.
 
 ---
 
