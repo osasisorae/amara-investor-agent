@@ -4,8 +4,8 @@
 
 | ID | Severity | Area | Status |
 | --- | --- | --- | --- |
-| SEC-001 | Critical | Authentication | OPEN |
-| SEC-002 | Critical | Data Exposure | OPEN |
+| SEC-001 | Critical | Authentication | RESOLVED |
+| SEC-002 | Critical | Data Exposure | RESOLVED |
 | SEC-003 | High | Authorization | OPEN |
 | SEC-004 | High | Authentication | OPEN |
 | SEC-005 | High | OTP Security | OPEN |
@@ -65,8 +65,9 @@ ID: SEC-001
 Severity: Critical
 Area: Authentication
 File: app/api/chat/[leadId]/route.ts (line 162)
-Status: OPEN
+Status: RESOLVED
 Description: The chat route GET and POST handlers do not verify the investor session before loading or mutating a conversation. Any caller with a valid leadId can fetch the chat and receive a fresh investor session cookie.
+Resolved: Added investor session verification and route leadId checks to both chat handlers, and removed session cookie minting from the route.
 Fix planned: Yes
 ---
 
@@ -75,8 +76,9 @@ ID: SEC-002
 Severity: Critical
 Area: Data Exposure
 File: app/api/chat/[leadId]/route.ts (line 178)
-Status: OPEN
+Status: RESOLVED
 Description: The public chat GET route returns the full lead row and complete message history. This exposes investor data and conversation history to any caller who knows a valid leadId.
+Resolved: The GET handler now requires a verified investor session for the same leadId and returns only the chat-safe lead fields needed by the UI.
 Fix planned: Yes
 ---
 

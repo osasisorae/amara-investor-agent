@@ -21,8 +21,7 @@ import { sendEmail } from '@/lib/email/resend-client';
 import { getDealRoomAccessEmailTemplate } from '@/lib/email/templates';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
-  setInvestorSessionCookie,
-  signInvestorSession,
+  verifyInvestorSession,
 } from '@/lib/investor-auth';
 
 const BINARY_QUALIFICATION_QUESTIONS = new Set<QualificationQuestion>([
@@ -160,11 +159,20 @@ async function ensureAgreementReadyMessages(lead: Awaited<ReturnType<typeof getL
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
   try {
     const { leadId } = params;
+    const session = await verifyInvestorSession(request);
+
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.leadId !== leadId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const lead = await getLeadById(leadId);
     if (!lead) {
@@ -175,20 +183,16 @@ export async function GET(
     const messages = await getMessagesByLeadId(leadId);
     const qualificationState = await getQualificationState(leadId, lead.stage);
 
-    const chatResponse = NextResponse.json({
-      lead,
+    return NextResponse.json({
+      lead: {
+        id: lead.id,
+        email: lead.email,
+        stage: lead.stage,
+        kyc_submitted_at: lead.kyc_submitted_at ?? undefined,
+      },
       messages: toChatMessages(messages),
       qualificationState,
     });
-
-    const token = await signInvestorSession({
-      leadId: lead.id,
-      email: lead.email,
-      role: 'investor',
-    });
-    setInvestorSessionCookie(chatResponse, token);
-
-    return chatResponse;
   } catch (error) {
     console.error('Error fetching chat:', error);
     return NextResponse.json(
@@ -204,6 +208,16 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    const session = await verifyInvestorSession(request);
+
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.leadId !== leadId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { message } = await request.json();
 
     if (!message || typeof message !== 'string') {
@@ -259,20 +273,11 @@ export async function POST(
       }
     }
 
-    const chatResponse = NextResponse.json({
+    return NextResponse.json({
       messages: toChatMessages(orchestratorResponse.agentMessages),
       stage: nextStage,
       qualificationState,
     });
-
-    const token = await signInvestorSession({
-      leadId: updatedLead.id,
-      email: updatedLead.email,
-      role: 'investor',
-    });
-    setInvestorSessionCookie(chatResponse, token);
-
-    return chatResponse;
   } catch (error) {
     console.error('Error processing message:', error);
     return NextResponse.json(
