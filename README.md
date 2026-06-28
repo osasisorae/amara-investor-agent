@@ -45,7 +45,7 @@ Amara is **not a chatbot**. She is an autonomous workflow agent that:
 | File Storage | Cloudflare R2 (KYC documents) |
 | Payment Operations | Grey Finance manual wire instructions + admin confirmation |
 | Backend Deployment | Vercel |
-| Auth | NextAuth.js |
+| Auth | Custom JWT cookie auth using jose (`lib/admin-auth.ts`, `lib/investor-auth.ts`) |
 
 ---
 
@@ -69,13 +69,12 @@ amara-investor-agent/
 │   ├── api/               # API routes
 │   │   ├── admin/        # Admin dashboard APIs
 │   │   ├── chat/         # Investor chat APIs
-│   │   ├── kyc/          # KYC upload/review APIs
-│   │   └── agent/        # Agent orchestrator
+│   │   └── kyc/          # KYC upload/review APIs
 │   ├── admin/            # Admin dashboard UI
 │   ├── chat/             # Investor chat interface
 │   └── layout.tsx
 ├── lib/
-│   ├── agent/            # Agent orchestrator logic
+│   ├── agent/            # Agent orchestration logic (`lib/agent/orchestrator.ts`)
 │   ├── db/               # Database client and queries
 │   ├── email/            # Email templates and sender
 │   └── qwen/             # Qwen API integration
@@ -159,10 +158,10 @@ See `.env.example` for all required variables:
 - `FUTUREX_USDT_TRX_ADDRESS` - USDT on TRON wallet
 
 ### Authentication
-- `NEXTAUTH_SECRET` - NextAuth session secret (generate with `openssl rand -base64 32`)
 - `ADMIN_EMAIL` - Admin dashboard login email
 - `ADMIN_PASSWORD` - Admin dashboard password
-- `ADMIN_JWT_SECRET` - JWT secret for admin sessions
+- `ADMIN_JWT_SECRET` - JWT signing secret for admin session cookies
+- `INVESTOR_JWT_SECRET` - Optional dedicated JWT signing secret for investor session cookies
 
 ### App Configuration
 - `NEXT_PUBLIC_APP_URL` - Your app URL (http://localhost:3000 for dev)
