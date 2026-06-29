@@ -79,6 +79,7 @@ import {
   type GreyInvestorCurrency,
 } from '@/lib/grey/currency';
 import { getGreyRate } from '@/lib/grey/rates';
+import { getPaymentReference } from '@/lib/payment';
 
 const ADMIN_ALERT_EMAIL =
   process.env.ADMIN_ALERT_EMAIL || 'osasisorae@gmail.com';
@@ -243,6 +244,19 @@ const TOOL_DEFINITIONS: QwenToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'get_investor_profile_context',
+      description:
+        'Return the authenticated investor profile details that Amara is allowed to confirm in chat, such as their recorded name, email, stage, and payment reference.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'flag_for_human_review',
       description:
         'Escalate a lead for manual follow-up when a question needs a direct answer from the FutureX team.',
@@ -334,6 +348,15 @@ interface ToolExecutionResult {
   content: string;
   emissions?: AgentEmission[];
   stageChange?: LeadStage;
+}
+
+interface InvestorProfileContext {
+  fullName: string | null;
+  email: string;
+  stage: LeadStage;
+  kycApproved: boolean;
+  agreementSigned: boolean;
+  paymentReference: string;
 }
 
 export interface OrchestratorResponse {
@@ -492,7 +515,23 @@ function getAllowedToolNamesForStage(stage: LeadStage): string[] {
         'send_email',
       ];
     case 'agreement_pending':
-      return ['unlock_agreement', 'log_audit_event', 'send_email'];
+      return [
+        'unlock_agreement',
+        'log_audit_event',
+        'send_email',
+        'search_knowledge_base',
+        'get_investor_profile_context',
+        'flag_for_human_review',
+      ];
+    case 'agreement_signed':
+    case 'payment_pending':
+    case 'closed':
+      return [
+        'log_audit_event',
+        'search_knowledge_base',
+        'get_investor_profile_context',
+        'flag_for_human_review',
+      ];
     default:
       return [];
   }
@@ -550,12 +589,37 @@ Operational rules:
 `;
   }
 
+  if (stage === 'agreement_pending') {
+    return `You are Amara supporting an investor whose KYC has been approved and whose agreement is ready.
+
+Operational rules:
+- If the investor asks how to sign, where to continue, or says they are ready, call \`unlock_agreement\` and give them the secure link that comes back from the tool.
+- If the investor asks to confirm their name, email, or payment reference, call \`get_investor_profile_context\` and answer only from that trusted result.
+- If the investor asks to update their name, email, KYC details, or payment account information, call \`flag_for_human_review\` and tell them the FutureX team will handle the change securely. Do not invent support contacts.
+- If the investor asks an investment or diligence question, call \`search_knowledge_base\` and answer only from the approved result. If the answer is not in the knowledge base, call \`flag_for_human_review\`.
+- Never claim the agreement has been signed or payment has been received.
+- Keep the reply to short paragraphs.`;
+  }
+
+  if (
+    stage === 'agreement_signed' ||
+    stage === 'payment_pending' ||
+    stage === 'closed'
+  ) {
+    return `You are Amara supporting an investor after the agreement phase.
+
+Operational rules:
+- If the investor asks to confirm their name, email, stage, or payment reference, call \`get_investor_profile_context\` and answer only from that trusted result.
+- If the investor asks to update their personal, KYC, agreement, or payment details, call \`flag_for_human_review\` and tell them the FutureX team will follow up securely. Do not invent support contacts or unsupported email addresses.
+- If the investor asks an investment or diligence question, call \`search_knowledge_base\` and answer only from the approved result. If the answer is not in the knowledge base, call \`flag_for_human_review\`.
+- If payment is still pending, remind them the team verifies transfers manually within 2 business days after they confirm payment in chat.
+- Never say you cannot access their recorded profile information if the trusted profile tool provides it.
+- Keep the reply concise and practical.`;
+  }
+
   return `You are Amara supporting an investor who has already passed KYC.
 
 Rules:
-- If the investor asks how to sign, where to continue, or says they are ready, call \`unlock_agreement\` and give them the secure link that comes back from the tool.
-- Never claim the agreement has been signed or payment has been received.
-- If the investor just needs reassurance or clarification, answer briefly and point them toward the agreement link.
 - Keep the reply to short paragraphs.`;
 }
 
@@ -1334,11 +1398,21 @@ export class AgentOrchestrator {
     message: string,
     context: ProcessMessageContext
   ): Promise<HandlerResult> {
+    const directProfileResponse = await this.handleDirectProfileSupportRequest(
+      lead,
+      message,
+      context
+    );
+
+    if (directProfileResponse) {
+      return directProfileResponse;
+    }
+
     return this.runToolConversation({
       lead,
       investorMessage: message,
-      stage: 'agreement_pending',
-      systemPrompt: buildToolPrompt('agreement_pending'),
+      stage: lead.stage,
+      systemPrompt: buildToolPrompt(lead.stage),
       context,
       initialToolChoice: 'auto',
     });
@@ -1633,6 +1707,13 @@ export class AgentOrchestrator {
         };
       }
 
+      case 'get_investor_profile_context': {
+        const profileContext = await this.getInvestorProfileContext(lead);
+        return {
+          content: JSON.stringify(profileContext),
+        };
+      }
+
       case 'flag_for_human_review': {
         const reason = this.requireString(args, 'reason');
         return this.flagLeadForHumanReview(lead, reason, appUrl);
@@ -1686,17 +1767,26 @@ export class AgentOrchestrator {
     reason: string,
     appUrl: string
   ): Promise<ToolExecutionResult> {
-    await applyOrchestratorStageTransition(
-      lead.id,
+    const shouldMoveToPendingHumanReview = canOrchestratorTransitionStage(
       lead.stage,
       'pending_human_review'
     );
+
+    if (shouldMoveToPendingHumanReview) {
+      await applyOrchestratorStageTransition(
+        lead.id,
+        lead.stage,
+        'pending_human_review'
+      );
+    }
+
     await logAuditEvent({
       leadId: lead.id,
       eventType: 'human_review_requested',
       metadata: {
         reason,
         source_stage: lead.stage,
+        stage_change_applied: shouldMoveToPendingHumanReview,
         fingerprint: createHash('sha256')
           .update(`${lead.id}:${reason}`)
           .digest('hex'),
@@ -1727,7 +1817,9 @@ export class AgentOrchestrator {
         escalated: true,
         reason,
       }),
-      stageChange: 'pending_human_review',
+      stageChange: shouldMoveToPendingHumanReview
+        ? 'pending_human_review'
+        : undefined,
     };
   }
 
@@ -1754,6 +1846,121 @@ export class AgentOrchestrator {
         string,
         unknown
       >,
+    };
+  }
+
+  private async getInvestorProfileContext(
+    lead: Lead
+  ): Promise<InvestorProfileContext> {
+    const latestAnswers = await getLatestQualificationAnswerMap(lead.id);
+
+    return {
+      fullName:
+        latestAnswers.full_legal_name?.answer?.trim() ||
+        lead.full_name?.trim() ||
+        null,
+      email: lead.email,
+      stage: lead.stage,
+      kycApproved: lead.kyc_approved === 1,
+      agreementSigned: Boolean(lead.agreement_signed_at),
+      paymentReference: getPaymentReference(lead.id),
+    };
+  }
+
+  private async handleDirectProfileSupportRequest(
+    lead: Lead,
+    message: string,
+    context: ProcessMessageContext
+  ): Promise<HandlerResult | null> {
+    const normalized = message.trim().toLowerCase().replace(/[’]/g, "'");
+
+    if (!normalized) {
+      return null;
+    }
+
+    const asksForName =
+      normalized.includes("what's my name") ||
+      normalized.includes('what is my name') ||
+      normalized.includes('my full name') ||
+      normalized.includes('name on file') ||
+      normalized.includes('recorded name');
+    const asksForEmail =
+      normalized.includes("what's my email") ||
+      normalized.includes('what is my email') ||
+      normalized.includes('which email') ||
+      normalized.includes('email on file') ||
+      normalized.includes('email do you have');
+    const asksToUpdateInfo =
+      normalized.includes('update my information') ||
+      normalized.includes('update my info') ||
+      normalized.includes('update my details') ||
+      normalized.includes('change my details') ||
+      normalized.includes('change my information') ||
+      normalized.includes('change my name') ||
+      normalized.includes('update my name') ||
+      normalized.includes('correct my name') ||
+      normalized.includes('update my email') ||
+      normalized.includes('change my email') ||
+      normalized.includes('update my kyc') ||
+      normalized.includes('update my profile');
+
+    if (!asksForName && !asksForEmail && !asksToUpdateInfo) {
+      return null;
+    }
+
+    const profileContext = await this.getInvestorProfileContext(lead);
+
+    if (asksToUpdateInfo) {
+      const escalation = await this.flagLeadForHumanReview(
+        lead,
+        `Investor requested a secure update to personal or KYC information while in stage ${lead.stage}. Message: ${sanitizeInvestorTextForModel(
+          message
+        )}`,
+        normalizeOrigin(context.appUrl)
+      );
+
+      return {
+        emissions: [
+          this.emitTextMessage(
+            profileContext.fullName
+              ? `Understood. The name currently recorded for you is ${profileContext.fullName}. Because your verification and agreement records are already in progress, I’ve flagged this for secure review by the FutureX team. They’ll follow up before any personal details are changed.`
+              : "Understood. Because your verification and agreement records are already in progress, I’ve flagged this for secure review by the FutureX team. They’ll follow up before any personal details are changed."
+          ),
+        ],
+        shouldUpdateStage: escalation.stageChange,
+      };
+    }
+
+    if (asksForName && asksForEmail) {
+      return {
+        emissions: [
+          this.emitTextMessage(
+            `Your recorded name is ${
+              profileContext.fullName || 'not yet available in this chat context'
+            }, and the email on file is ${profileContext.email}.`
+          ),
+        ],
+      };
+    }
+
+    if (asksForName) {
+      return {
+        emissions: [
+          this.emitTextMessage(
+            profileContext.fullName
+              ? `Your recorded name is ${profileContext.fullName}.`
+              : "I don't yet have a verified full name available in this chat context."
+          ),
+        ],
+      };
+    }
+
+    return {
+      emissions: [
+        this.emitTextMessage(
+          `The email on file for this conversation is ${profileContext.email}.`
+        ),
+      ],
     };
   }
 
