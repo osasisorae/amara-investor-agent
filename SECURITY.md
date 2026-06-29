@@ -10,9 +10,9 @@
 | SEC-004 | High | Authentication | RESOLVED |
 | SEC-005 | High | OTP Security | RESOLVED |
 | SEC-006 | High | OTP Security | RESOLVED |
-| SEC-007 | High | Agent / Prompt Injection | OPEN |
-| SEC-008 | High | Agent / Prompt Injection | OPEN |
-| SEC-009 | High | Data Retention | OPEN |
+| SEC-007 | High | Agent / Prompt Injection | RESOLVED |
+| SEC-008 | High | Agent / Prompt Injection | RESOLVED |
+| SEC-009 | High | Data Retention | RESOLVED |
 | SEC-010 | Medium | Authentication | OPEN |
 | SEC-011 | Medium | Authentication | OPEN |
 | SEC-012 | Medium | Input Validation | OPEN |
@@ -21,7 +21,7 @@
 | SEC-015 | Medium | Secrets & Environment | OPEN |
 | SEC-016 | Medium | Secrets & Environment | OPEN |
 | SEC-017 | Medium | Data Exposure | OPEN |
-| SEC-018 | Medium | Email & External API | OPEN |
+| SEC-018 | Medium | Email & External API | RESOLVED |
 | SEC-019 | Medium | Email & External API | OPEN |
 | SEC-020 | Medium | Data Exposure | OPEN |
 | SEC-021 | Medium | Data Exposure | OPEN |
@@ -131,8 +131,9 @@ ID: SEC-007
 Severity: High
 Area: Agent / Prompt Injection
 File: lib/agent/orchestrator.ts (line 1296)
-Status: OPEN
+Status: RESOLVED
 Description: Investor message text is passed directly into the Qwen conversation with no sanitization or policy boundary beyond the prompt. A malicious user can attempt prompt injection against the agent workflow.
+Resolved: Investor messages are now normalized, bounded, wrapped as untrusted input, and sent under an explicit server-side security boundary before reaching Qwen.
 Fix planned: Yes
 ---
 
@@ -141,8 +142,9 @@ ID: SEC-008
 Severity: High
 Area: Agent / Prompt Injection
 File: lib/agent/orchestrator.ts (line 1363), lib/agent/orchestrator.ts (line 1457)
-Status: OPEN
+Status: RESOLVED
 Description: The server executes model returned tool calls, including update_lead_stage, without a strict server side transition policy. A successful prompt injection could drive unauthorized stage changes.
+Resolved: Tool execution is now stage-gated at runtime, invalid tool calls are denied safely, and lead stage changes are enforced against a server-side transition graph.
 Fix planned: Yes
 ---
 
@@ -151,8 +153,9 @@ ID: SEC-009
 Severity: High
 Area: Data Retention
 File: lib/db/leads.ts (line 90), app/api/admin/kyc/[leadId]/route.ts (line 363), app/api/kyc/[leadId]/documents/route.ts (line 120)
-Status: OPEN
+Status: RESOLVED
 Description: KYC files are not reliably deleted from R2 when a lead is deleted, when KYC is rejected, or when document removal fails. Sensitive files can remain in object storage after the database record is gone.
+Resolved: Lead deletion and KYC rejection now purge R2 objects before database cleanup, and investor-side document removal aborts if storage deletion fails so metadata is retained until cleanup succeeds.
 Fix planned: Yes
 ---
 
@@ -242,8 +245,9 @@ ID: SEC-018
 Severity: Medium
 Area: Email & External API
 File: app/api/chat/access/route.ts (line 35), app/api/agreement/[leadId]/otp/route.ts (line 13)
-Status: OPEN
+Status: RESOLVED
 Description: Public OTP endpoints can trigger repeated emails to known leads with no throttling. This creates an email abuse and nuisance risk.
+Resolved: Public OTP issuance now enforces cooldowns, per-window limits, and IP-based throttling before any access or agreement code email is sent.
 Fix planned: Yes
 ---
 

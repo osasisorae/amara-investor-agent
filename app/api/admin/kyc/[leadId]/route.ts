@@ -8,7 +8,10 @@ import {
 import { buildInvestorAccessUrl } from '@/lib/chat/access-link';
 import { logAuditEvent } from '@/lib/db/audit';
 import { execute } from '@/lib/db/client';
-import { deleteKycDocumentsByLeadId } from '@/lib/db/kyc';
+import {
+  deleteKycDocumentsByLeadId,
+  getKycDocumentsByLeadId,
+} from '@/lib/db/kyc';
 import {
   approveKYC,
   getLeadById,
@@ -30,6 +33,7 @@ import {
   getKycSourceOfFundsLabel,
   KYC_RISK_DECLARATION_DEFINITIONS,
 } from '@/lib/kyc/requirements';
+import { deleteFile } from '@/lib/storage/r2';
 
 function getStringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -141,6 +145,16 @@ function getPaymentAccount(
       formatYesNo(getAnswer(answers, 'payment_from_own_account')) ||
       'Not provided',
   };
+}
+
+async function purgeStoredKycDocuments(leadId: string): Promise<void> {
+  const documents = await getKycDocumentsByLeadId(leadId);
+
+  for (const document of documents) {
+    await deleteFile(document.filename);
+  }
+
+  await deleteKycDocumentsByLeadId(leadId);
 }
 
 // Stage ownership rule: only lib/agent/orchestrator.ts and the admin KYC/payment
@@ -365,8 +379,20 @@ export async function POST(
         );
       }
 
+      try {
+        await purgeStoredKycDocuments(leadId);
+      } catch (error) {
+        console.error('Failed to purge stored KYC documents on rejection:', error);
+        return NextResponse.json(
+          {
+            error:
+              'Failed to securely remove stored KYC documents. Please retry the rejection.',
+          },
+          { status: 502 }
+        );
+      }
+
       await returnKYCToIntake(leadId);
-      await deleteKycDocumentsByLeadId(leadId);
 
       await logAuditEvent({
         leadId,

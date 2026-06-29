@@ -196,7 +196,11 @@ export async function POST(
       full_name: fullName,
     });
     await markAgreementSigned(leadId);
-    await applyOrchestratorStageTransition(leadId, 'agreement_signed');
+    await applyOrchestratorStageTransition(
+      leadId,
+      lead.stage,
+      'agreement_signed'
+    );
     await logAuditEvent({
       leadId,
       eventType: 'agreement_signed',
@@ -231,7 +235,11 @@ export async function POST(
           : 'Payment instructions could not be sent automatically.';
     }
 
-    await applyOrchestratorStageTransition(leadId, 'payment_pending');
+    await applyOrchestratorStageTransition(
+      leadId,
+      'agreement_signed',
+      'payment_pending'
+    );
     const paymentMessageCreatedAt = Math.floor(Date.now() / 1000);
 
     await saveMessage({

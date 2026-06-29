@@ -1,5 +1,7 @@
 import { nanoid } from 'nanoid';
 import { db, query, queryOne, execute } from './client';
+import { getKycDocumentsByLeadId } from './kyc';
+import { deleteFile } from '@/lib/storage/r2';
 
 export type LeadStage =
   | 'outreach_sent'
@@ -85,6 +87,12 @@ export async function deleteLeadCascade(
 
   if (!lead) {
     return null;
+  }
+
+  const kycDocuments = await getKycDocumentsByLeadId(leadId);
+
+  for (const document of kycDocuments) {
+    await deleteFile(document.filename);
   }
 
   const transaction = await db.transaction('write');

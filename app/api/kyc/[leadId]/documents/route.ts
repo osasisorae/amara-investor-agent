@@ -124,6 +124,13 @@ export async function DELETE(
         'Failed to delete KYC document from R2 before removing metadata:',
         error
       );
+      return NextResponse.json(
+        {
+          error:
+            'Failed to remove the stored document file. Please try again.',
+        },
+        { status: 502 }
+      );
     }
 
     await deleteKycDocumentById(leadId, documentId);
