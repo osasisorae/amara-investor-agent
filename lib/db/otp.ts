@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { createHmac, randomInt } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { execute, queryOne } from './client';
 
@@ -12,8 +12,31 @@ export interface OtpCode {
   created_at: number;
 }
 
+interface OtpSendStatsRow {
+  latest_created_at: number | string | null;
+  recent_count: number | string | null;
+}
+
 function generateOtpCode(): string {
   return randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+function getOtpHashSecret(): string {
+  const secret =
+    process.env.INVESTOR_JWT_SECRET?.trim() ||
+    process.env.ADMIN_JWT_SECRET?.trim();
+
+  if (!secret) {
+    throw new Error('INVESTOR_JWT_SECRET or ADMIN_JWT_SECRET is not configured');
+  }
+
+  return secret;
+}
+
+function hashOtpCode(code: string): string {
+  return `v1:${createHmac('sha256', getOtpHashSecret())
+    .update(code)
+    .digest('hex')}`;
 }
 
 export async function createOtpCode(params: {
@@ -23,6 +46,7 @@ export async function createOtpCode(params: {
 }): Promise<OtpCode> {
   const id = nanoid();
   const code = generateOtpCode();
+  const hashedCode = hashOtpCode(code);
   const now = Math.floor(Date.now() / 1000);
   const ttlMinutes = params.ttlMinutes ?? 10;
   const expiresAt = now + ttlMinutes * 60;
@@ -35,7 +59,7 @@ export async function createOtpCode(params: {
   await execute(
     `INSERT INTO otp_codes (id, lead_id, code, purpose, expires_at, used, created_at)
      VALUES (?, ?, ?, ?, ?, 0, ?)`,
-    [id, params.leadId, code, params.purpose, expiresAt, now]
+    [id, params.leadId, hashedCode, params.purpose, expiresAt, now]
   );
 
   return {
@@ -55,17 +79,18 @@ export async function consumeOtpCode(params: {
   code: string;
 }): Promise<OtpCode | null> {
   const now = Math.floor(Date.now() / 1000);
+  const hashedCode = hashOtpCode(params.code);
   const otp = await queryOne<OtpCode>(
     `SELECT *
      FROM otp_codes
      WHERE lead_id = ?
        AND purpose = ?
-       AND code = ?
+       AND code IN (?, ?)
        AND used = 0
        AND expires_at >= ?
      ORDER BY created_at DESC
      LIMIT 1`,
-    [params.leadId, params.purpose, params.code, now]
+    [params.leadId, params.purpose, hashedCode, params.code, now]
   );
 
   if (!otp) {
@@ -75,6 +100,69 @@ export async function consumeOtpCode(params: {
   await execute('UPDATE otp_codes SET used = 1 WHERE id = ?', [otp.id]);
   return {
     ...otp,
+    code: params.code,
     used: 1,
+  };
+}
+
+export async function getOtpSendLimitStatus(params: {
+  leadId: string;
+  purpose: string;
+  cooldownSeconds: number;
+  windowSeconds: number;
+  maxCodesPerWindow: number;
+}): Promise<{
+  allowed: boolean;
+  retryAfterSeconds: number;
+  reason?: 'cooldown' | 'window_limit';
+}> {
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = now - params.windowSeconds;
+  const row = await queryOne<OtpSendStatsRow>(
+    `SELECT
+       MAX(created_at) AS latest_created_at,
+       COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS recent_count
+     FROM otp_codes
+     WHERE lead_id = ?
+       AND purpose = ?`,
+    [windowStart, params.leadId, params.purpose]
+  );
+
+  const latestCreatedAt =
+    typeof row?.latest_created_at === 'number'
+      ? row.latest_created_at
+      : typeof row?.latest_created_at === 'string'
+        ? Number(row.latest_created_at)
+        : null;
+  const recentCountValue = row?.recent_count;
+  const recentCount =
+    typeof recentCountValue === 'number'
+      ? recentCountValue
+      : typeof recentCountValue === 'string'
+        ? Number(recentCountValue)
+        : 0;
+
+  if (
+    latestCreatedAt &&
+    now - latestCreatedAt < params.cooldownSeconds
+  ) {
+    return {
+      allowed: false,
+      retryAfterSeconds: params.cooldownSeconds - (now - latestCreatedAt),
+      reason: 'cooldown',
+    };
+  }
+
+  if (recentCount >= params.maxCodesPerWindow) {
+    return {
+      allowed: false,
+      retryAfterSeconds: params.windowSeconds,
+      reason: 'window_limit',
+    };
+  }
+
+  return {
+    allowed: true,
+    retryAfterSeconds: 0,
   };
 }

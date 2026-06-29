@@ -2,14 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { coerceCommitmentSlotCount } from '@/lib/agreement/commitment';
 import { logAuditEvent } from '@/lib/db/audit';
 import { getLeadById } from '@/lib/db/leads';
-import { createOtpCode } from '@/lib/db/otp';
+import { createOtpCode, getOtpSendLimitStatus } from '@/lib/db/otp';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getOtpEmailTemplate } from '@/lib/email/templates';
 import { verifyInvestorSession } from '@/lib/investor-auth';
 import { saveLeadCommitmentSelection } from '@/lib/payment';
+import {
+  buildOtpRateLimitKey,
+  consumeSlidingWindowRateLimit,
+  getClientIpAddress,
+  getRetryAfterHeaders,
+} from '@/lib/security/otp-rate-limit';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
 const OTP_EXPIRY_MINUTES = 10;
+const AGREEMENT_OTP_SEND_COOLDOWN_SECONDS = 60;
+const AGREEMENT_OTP_SEND_WINDOW_SECONDS = 60 * 60;
+const AGREEMENT_OTP_MAX_SENDS_PER_WINDOW = 5;
+const AGREEMENT_OTP_REQUEST_WINDOW_SECONDS = 10 * 60;
+const AGREEMENT_OTP_MAX_REQUESTS_PER_WINDOW = 5;
 
 export async function POST(
   request: NextRequest,
@@ -18,9 +29,30 @@ export async function POST(
   try {
     const { leadId } = params;
     const session = await verifyInvestorSession(request, leadId);
+    const ipAddress = getClientIpAddress(request);
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const requestLimit = consumeSlidingWindowRateLimit({
+      key: buildOtpRateLimitKey({
+        scope: 'agreement-otp-send',
+        ipAddress,
+        identifier: leadId,
+      }),
+      maxAttempts: AGREEMENT_OTP_MAX_REQUESTS_PER_WINDOW,
+      windowSeconds: AGREEMENT_OTP_REQUEST_WINDOW_SECONDS,
+    });
+
+    if (!requestLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Please wait before requesting another verification code.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(requestLimit.retryAfterSeconds),
+        }
+      );
     }
 
     const body = await request.json().catch(() => ({}));
@@ -50,6 +82,24 @@ export async function POST(
       return NextResponse.json(
         { error: 'Agreement has already been signed' },
         { status: 400 }
+      );
+    }
+
+    const otpSendLimit = await getOtpSendLimitStatus({
+      leadId,
+      purpose: AGREEMENT_OTP_PURPOSE,
+      cooldownSeconds: AGREEMENT_OTP_SEND_COOLDOWN_SECONDS,
+      windowSeconds: AGREEMENT_OTP_SEND_WINDOW_SECONDS,
+      maxCodesPerWindow: AGREEMENT_OTP_MAX_SENDS_PER_WINDOW,
+    });
+
+    if (!otpSendLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Please wait before requesting another verification code.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(otpSendLimit.retryAfterSeconds),
+        }
       );
     }
 
@@ -86,7 +136,7 @@ export async function POST(
         slot_count: commitmentSelection.slotCount,
         commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
       },
-      ipAddress: request.headers.get('x-forwarded-for') || undefined,
+      ipAddress,
       userAgent: request.headers.get('user-agent') || undefined,
     });
 

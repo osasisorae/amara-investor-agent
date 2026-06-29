@@ -1,19 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { logAuditEvent } from '@/lib/db/audit';
+import { countAuditEventsSince, logAuditEvent } from '@/lib/db/audit';
 import { queryOne } from '@/lib/db/client';
 import { getLeadByEmail } from '@/lib/db/leads';
-import { consumeOtpCode, createOtpCode } from '@/lib/db/otp';
+import { consumeOtpCode, createOtpCode, getOtpSendLimitStatus } from '@/lib/db/otp';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getInvestorAccessOtpEmailTemplate } from '@/lib/email/templates';
 import {
   setInvestorSessionCookie,
   signInvestorSession,
 } from '@/lib/investor-auth';
+import {
+  buildOtpRateLimitKey,
+  consumeSlidingWindowRateLimit,
+  getClientIpAddress,
+  getRetryAfterHeaders,
+} from '@/lib/security/otp-rate-limit';
 
 const CHAT_ACCESS_OTP_PURPOSE = 'chat_access';
 const CHAT_ACCESS_OTP_EXPIRY_MINUTES = 10;
+const CHAT_ACCESS_SEND_COOLDOWN_SECONDS = 60;
+const CHAT_ACCESS_SEND_WINDOW_SECONDS = 60 * 60;
+const CHAT_ACCESS_MAX_SENDS_PER_WINDOW = 5;
+const CHAT_ACCESS_REQUEST_WINDOW_SECONDS = 10 * 60;
+const CHAT_ACCESS_MAX_REQUESTS_PER_WINDOW = 5;
+const CHAT_ACCESS_VERIFY_WINDOW_SECONDS = 15 * 60;
+const CHAT_ACCESS_MAX_VERIFY_ATTEMPTS = 5;
 const GENERIC_ACCESS_MESSAGE =
   "If your email is in our system, you'll receive an access code shortly.";
+const CHAT_ACCESS_FAILED_OTP_EVENT = 'chat_access_otp_verification_failed';
 
 interface OffereeRegisterRow {
   activated: number;
@@ -37,11 +51,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const email =
       typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const ipAddress = getClientIpAddress(request);
 
     if (!email) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    const requestLimit = consumeSlidingWindowRateLimit({
+      key: buildOtpRateLimitKey({
+        scope: 'chat-access-send',
+        ipAddress,
+      }),
+      maxAttempts: CHAT_ACCESS_MAX_REQUESTS_PER_WINDOW,
+      windowSeconds: CHAT_ACCESS_REQUEST_WINDOW_SECONDS,
+    });
+
+    if (!requestLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Please wait before requesting another access code.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(requestLimit.retryAfterSeconds),
+        }
       );
     }
 
@@ -54,6 +88,21 @@ export async function POST(request: NextRequest) {
     );
 
     if (!lead || !offeree || offeree.activated !== 1) {
+      return NextResponse.json({
+        success: true,
+        message: GENERIC_ACCESS_MESSAGE,
+      });
+    }
+
+    const otpSendLimit = await getOtpSendLimitStatus({
+      leadId: lead.id,
+      purpose: CHAT_ACCESS_OTP_PURPOSE,
+      cooldownSeconds: CHAT_ACCESS_SEND_COOLDOWN_SECONDS,
+      windowSeconds: CHAT_ACCESS_SEND_WINDOW_SECONDS,
+      maxCodesPerWindow: CHAT_ACCESS_MAX_SENDS_PER_WINDOW,
+    });
+
+    if (!otpSendLimit.allowed) {
       return NextResponse.json({
         success: true,
         message: GENERIC_ACCESS_MESSAGE,
@@ -84,7 +133,7 @@ export async function POST(request: NextRequest) {
         purpose: CHAT_ACCESS_OTP_PURPOSE,
         expires_at: otp.expires_at,
       },
-      ipAddress: request.headers.get('x-forwarded-for') || undefined,
+      ipAddress,
       userAgent: request.headers.get('user-agent') || undefined,
     });
 
@@ -107,11 +156,31 @@ export async function PATCH(request: NextRequest) {
     const email =
       typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const code = typeof body.code === 'string' ? body.code.trim() : '';
+    const ipAddress = getClientIpAddress(request);
 
     if (!email || !code) {
       return NextResponse.json(
         { error: 'Email and access code are required.' },
         { status: 400 }
+      );
+    }
+
+    const verifyLimit = consumeSlidingWindowRateLimit({
+      key: buildOtpRateLimitKey({
+        scope: 'chat-access-verify',
+        ipAddress,
+      }),
+      maxAttempts: CHAT_ACCESS_MAX_VERIFY_ATTEMPTS,
+      windowSeconds: CHAT_ACCESS_VERIFY_WINDOW_SECONDS,
+    });
+
+    if (!verifyLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Try again later.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(verifyLimit.retryAfterSeconds),
+        }
       );
     }
 
@@ -130,6 +199,23 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const failedAttempts = await countAuditEventsSince({
+      leadId: lead.id,
+      eventType: CHAT_ACCESS_FAILED_OTP_EVENT,
+      since:
+        Math.floor(Date.now() / 1000) - CHAT_ACCESS_VERIFY_WINDOW_SECONDS,
+    });
+
+    if (failedAttempts >= CHAT_ACCESS_MAX_VERIFY_ATTEMPTS) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Try again later.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(CHAT_ACCESS_VERIFY_WINDOW_SECONDS),
+        }
+      );
+    }
+
     const otp = await consumeOtpCode({
       leadId: lead.id,
       purpose: CHAT_ACCESS_OTP_PURPOSE,
@@ -137,6 +223,28 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (!otp) {
+      await logAuditEvent({
+        leadId: lead.id,
+        eventType: CHAT_ACCESS_FAILED_OTP_EVENT,
+        metadata: {
+          purpose: CHAT_ACCESS_OTP_PURPOSE,
+        },
+        ipAddress,
+        userAgent: request.headers.get('user-agent') || undefined,
+      });
+
+      const nextFailedAttemptCount = failedAttempts + 1;
+
+      if (nextFailedAttemptCount >= CHAT_ACCESS_MAX_VERIFY_ATTEMPTS) {
+        return NextResponse.json(
+          { error: 'Too many verification attempts. Try again later.' },
+          {
+            status: 429,
+            headers: getRetryAfterHeaders(CHAT_ACCESS_VERIFY_WINDOW_SECONDS),
+          }
+        );
+      }
+
       return NextResponse.json(
         { error: 'Invalid or expired access code.' },
         { status: 400 }

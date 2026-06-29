@@ -8,7 +8,7 @@ import {
 } from '@/lib/agreement/template';
 import { coerceCommitmentSlotCount } from '@/lib/agreement/commitment';
 import { applyOrchestratorStageTransition } from '@/lib/agent/orchestrator';
-import { logAuditEvent } from '@/lib/db/audit';
+import { countAuditEventsSince, logAuditEvent } from '@/lib/db/audit';
 import {
   getLeadById,
   markAgreementSigned,
@@ -23,8 +23,17 @@ import {
   getPaymentReference,
   sendPaymentInstructions,
 } from '@/lib/payment';
+import {
+  buildOtpRateLimitKey,
+  consumeSlidingWindowRateLimit,
+  getClientIpAddress,
+  getRetryAfterHeaders,
+} from '@/lib/security/otp-rate-limit';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
+const AGREEMENT_OTP_VERIFY_WINDOW_SECONDS = 15 * 60;
+const AGREEMENT_OTP_MAX_VERIFY_ATTEMPTS = 5;
+const AGREEMENT_OTP_FAILED_EVENT = 'agreement_otp_verification_failed';
 
 export async function POST(
   request: NextRequest,
@@ -33,9 +42,30 @@ export async function POST(
   try {
     const { leadId } = params;
     const session = await verifyInvestorSession(request, leadId);
+    const ipAddress = getClientIpAddress(request);
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const verifyLimit = consumeSlidingWindowRateLimit({
+      key: buildOtpRateLimitKey({
+        scope: 'agreement-otp-verify',
+        ipAddress,
+        identifier: leadId,
+      }),
+      maxAttempts: AGREEMENT_OTP_MAX_VERIFY_ATTEMPTS,
+      windowSeconds: AGREEMENT_OTP_VERIFY_WINDOW_SECONDS,
+    });
+
+    if (!verifyLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Try again later.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(verifyLimit.retryAfterSeconds),
+        }
+      );
     }
 
     const body = await request.json();
@@ -87,6 +117,23 @@ export async function POST(
       );
     }
 
+    const failedAttempts = await countAuditEventsSince({
+      leadId,
+      eventType: AGREEMENT_OTP_FAILED_EVENT,
+      since:
+        Math.floor(Date.now() / 1000) - AGREEMENT_OTP_VERIFY_WINDOW_SECONDS,
+    });
+
+    if (failedAttempts >= AGREEMENT_OTP_MAX_VERIFY_ATTEMPTS) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Try again later.' },
+        {
+          status: 429,
+          headers: getRetryAfterHeaders(AGREEMENT_OTP_VERIFY_WINDOW_SECONDS),
+        }
+      );
+    }
+
     const otpRecord = await consumeOtpCode({
       leadId,
       purpose: AGREEMENT_OTP_PURPOSE,
@@ -94,6 +141,28 @@ export async function POST(
     });
 
     if (!otpRecord) {
+      await logAuditEvent({
+        leadId,
+        eventType: AGREEMENT_OTP_FAILED_EVENT,
+        metadata: {
+          purpose: AGREEMENT_OTP_PURPOSE,
+        },
+        ipAddress,
+        userAgent: request.headers.get('user-agent') || undefined,
+      });
+
+      const nextFailedAttemptCount = failedAttempts + 1;
+
+      if (nextFailedAttemptCount >= AGREEMENT_OTP_MAX_VERIFY_ATTEMPTS) {
+        return NextResponse.json(
+          { error: 'Too many verification attempts. Try again later.' },
+          {
+            status: 429,
+            headers: getRetryAfterHeaders(AGREEMENT_OTP_VERIFY_WINDOW_SECONDS),
+          }
+        );
+      }
+
       return NextResponse.json(
         { error: 'Invalid or expired verification code' },
         { status: 400 }
@@ -141,7 +210,7 @@ export async function POST(
         agreement_version: AGREEMENT_VERSION,
         document_hash: documentHash,
       },
-      ipAddress: request.headers.get('x-forwarded-for') || undefined,
+      ipAddress,
       userAgent: request.headers.get('user-agent') || undefined,
     });
 

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { execute, query } from './client';
+import { execute, query, queryOne } from './client';
 
 export type AuditEventType =
   | 'outreach_sent'
@@ -24,6 +24,8 @@ export type AuditEventType =
   | 'agreement_viewed'
   | 'agreement_signed'
   | 'otp_sent'
+  | 'chat_access_otp_verification_failed'
+  | 'agreement_otp_verification_failed'
   | 'payment_instructions_sent'
   | 'payment_confirmation_sent'
   | 'payment_received';
@@ -78,4 +80,29 @@ export async function getAuditEventsByType(
     'SELECT * FROM audit_events WHERE event_type = ? ORDER BY created_at DESC',
     [eventType]
   );
+}
+
+export async function countAuditEventsSince(params: {
+  leadId: string;
+  eventType: AuditEventType;
+  since: number;
+}): Promise<number> {
+  const row = await queryOne<{ count: number | string }>(
+    `SELECT COUNT(*) AS count
+     FROM audit_events
+     WHERE lead_id = ?
+       AND event_type = ?
+       AND created_at >= ?`,
+    [params.leadId, params.eventType, params.since]
+  );
+
+  const countValue = row?.count;
+  const parsedCount =
+    typeof countValue === 'number'
+      ? countValue
+      : typeof countValue === 'string'
+        ? Number(countValue)
+        : 0;
+
+  return Number.isFinite(parsedCount) ? parsedCount : 0;
 }

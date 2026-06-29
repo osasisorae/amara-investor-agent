@@ -8,8 +8,8 @@
 | SEC-002 | Critical | Data Exposure | RESOLVED |
 | SEC-003 | High | Authorization | RESOLVED |
 | SEC-004 | High | Authentication | RESOLVED |
-| SEC-005 | High | OTP Security | OPEN |
-| SEC-006 | High | OTP Security | OPEN |
+| SEC-005 | High | OTP Security | RESOLVED |
+| SEC-006 | High | OTP Security | RESOLVED |
 | SEC-007 | High | Agent / Prompt Injection | OPEN |
 | SEC-008 | High | Agent / Prompt Injection | OPEN |
 | SEC-009 | High | Data Retention | OPEN |
@@ -109,8 +109,9 @@ ID: SEC-005
 Severity: High
 Area: OTP Security
 File: app/api/chat/access/route.ts (line 35), app/api/agreement/[leadId]/otp/route.ts (line 13), app/api/agreement/[leadId]/sign/route.ts (line 28)
-Status: OPEN
+Status: RESOLVED
 Description: OTP generation and verification flows have no rate limiting, cooldown, or brute force protection. Attackers can repeatedly request or guess codes without any server side throttling.
+Resolved: Added OTP send cooldowns, per-window send limits, in-memory IP throttles, and verification attempt limits for both chat access and agreement signing flows.
 Fix planned: Yes
 ---
 
@@ -119,8 +120,9 @@ ID: SEC-006
 Severity: High
 Area: OTP Security
 File: lib/db/otp.ts (line 35)
-Status: OPEN
+Status: RESOLVED
 Description: OTP codes are stored in plaintext in the database. A database read exposes active verification codes directly.
+Resolved: OTP codes are now stored as HMAC-SHA256 hashes at rest, while verification supports a short compatibility window for older plaintext codes that may still exist.
 Fix planned: Yes
 ---
 
