@@ -126,9 +126,11 @@ export function getOutreachEmailTemplate(params: {
 
       <p>We have built a guided deal room where you can review the opportunity clearly, understand how the structure works, ask due diligence questions, and decide whether it is worth exploring further.</p>
 
+      <p>To protect your access, we&apos;ll first send a one time code to your email before opening the conversation.</p>
+
       <p>If it is not a fit, that will become clear quickly. If it is, the next steps are already there for you.</p>
 
-      <a href="${params.chatLink}" class="cta">Open the Private Deal Room →</a>
+      <a href="${params.chatLink}" class="cta">Verify Email and Open the Deal Room →</a>
 
       <p>Best,<br>
       <strong>FutureX Team</strong></p>
@@ -143,9 +145,11 @@ You were recently added by the FutureX team for private access to our current ho
 
 We have built a guided deal room where you can review the opportunity clearly, understand how the structure works, ask due diligence questions, and decide whether it is worth exploring further.
 
+To protect your access, we'll first send a one time code to your email before opening the conversation.
+
 If it is not a fit, that will become clear quickly. If it is, the next steps are already there for you.
 
-Open the private deal room: ${params.chatLink}
+Verify email and open the deal room: ${params.chatLink}
 
 Best,
 FutureX Team
@@ -221,7 +225,7 @@ export function getDealRoomAccessEmailTemplate(params: {
       <p>You&apos;ve met the qualification criteria for the <strong class="gold">Akwa Ibom Hospitality Vehicle</strong>. Your secure deal room is now open.</p>
 
       <div class="alert">
-        <strong>Next step:</strong> use the secure link below to review the opportunity materials and continue your diligence.
+        <strong>Next step:</strong> use the secure link below to verify your email, then open the deal room and continue your diligence.
       </div>
 
       <p>Inside the deal room, you can:</p>
@@ -231,7 +235,7 @@ export function getDealRoomAccessEmailTemplate(params: {
         <li>Continue to onboarding and KYC when you are ready</li>
       </ul>
 
-      <a href="${params.chatLink}" class="cta">Open the Deal Room →</a>
+      <a href="${params.chatLink}" class="cta">Verify Email and Open the Deal Room →</a>
 
       <p>If anything is unclear, continue the conversation from the same secure link.</p>
 
@@ -245,7 +249,7 @@ You're qualified, ${params.investorName}.
 
 You've met the qualification criteria for the Akwa Ibom Hospitality Vehicle. Your secure deal room is now open.
 
-Next step: use the secure link below to review the opportunity materials and continue your diligence.
+Next step: use the secure link below to verify your email, then open the deal room and continue your diligence.
 
 ${params.chatLink}
 
@@ -469,7 +473,7 @@ export function getPaymentInstructionsEmailTemplate(params: {
       <h2>Thank you, ${params.investorName}.</h2>
 
       <p>Your agreement has been signed for the <strong class="gold">${SPV_NAME}</strong>.</p>
-      <p>Your agreement is signed. Use the link below to return to your Amara conversation to complete payment.</p>
+      <p>Your agreement is signed. Use the link below to verify your email and return to your investor conversation to complete payment.</p>
 
       <div class="alert">
         <strong>Payment reference:</strong> ${params.paymentReference}<br/>
@@ -477,7 +481,7 @@ export function getPaymentInstructionsEmailTemplate(params: {
       </div>
 
       <p>
-        <a class="cta" href="${params.chatUrl}">Return to your conversation →</a>
+        <a class="cta" href="${params.chatUrl}">Verify Email and Return to Your Conversation →</a>
       </p>
     `,
     PAYMENT_INSTRUCTIONS_HTML_FOOTER
@@ -487,12 +491,12 @@ export function getPaymentInstructionsEmailTemplate(params: {
 Thank you, ${params.investorName}.
 
 Your agreement has been signed for the ${SPV_NAME}.
-Your agreement is signed. Use the link below to return to your Amara conversation to complete payment.
+Your agreement is signed. Use the link below to verify your email and return to your investor conversation to complete payment.
 
 Payment reference: ${params.paymentReference}
 Recorded commitment: ${params.commitmentLabel}
 
-Return to your conversation:
+Verify email and return to your conversation:
 ${params.chatUrl}
 
 ${PAYMENT_INSTRUCTIONS_TEXT_FOOTER}

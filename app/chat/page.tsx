@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useFeedback } from '@/components/feedback-provider';
@@ -17,6 +17,22 @@ export default function ChatAccessPage() {
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [otpRequested, setOtpRequested] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const prefilledEmail = searchParams.get('email')?.trim().toLowerCase();
+    const accessReason = searchParams.get('reason');
+
+    if (prefilledEmail) {
+      setEmail((current) => current || prefilledEmail);
+    }
+
+    if (accessReason === 'session_required') {
+      setStatusMessage((current) =>
+        current || 'Verify your email to reopen your FutureX conversation.'
+      );
+    }
+  }, []);
 
   const requestAccessCode = async (event: React.FormEvent) => {
     event.preventDefault();

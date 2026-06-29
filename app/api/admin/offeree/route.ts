@@ -5,6 +5,7 @@ import { createLead } from '@/lib/db/leads';
 import { logAuditEvent } from '@/lib/db/audit';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getOutreachEmailTemplate } from '@/lib/email/templates';
+import { buildInvestorAccessUrl } from '@/lib/chat/access-link';
 import { verifyAdminSession } from '@/lib/admin-auth';
 
 interface OffereeRegisterRow {
@@ -79,7 +80,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Send outreach email
-    const chatLink = `${process.env.NEXT_PUBLIC_APP_URL}/chat/${lead.id}`;
+    const chatLink = buildInvestorAccessUrl(
+      process.env.NEXT_PUBLIC_BASE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        'http://localhost:3000',
+      normalizedEmail
+    );
     const emailTemplate = getOutreachEmailTemplate({
       investorName:
         typeof fullName === 'string' && fullName.trim().length > 0

@@ -15,6 +15,7 @@ import {
 } from '@/lib/db/qualification';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getPaymentInstructionsEmailTemplate } from '@/lib/email/templates';
+import { buildInvestorAccessUrl } from '@/lib/chat/access-link';
 import { type PaymentMethod, isPaymentMethod } from '@/lib/payment-methods';
 
 export interface PaymentInstructionResult {
@@ -106,7 +107,11 @@ export function getPaymentReference(leadId: string): string {
 }
 
 function getAppBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+  return (
+    process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+    'http://localhost:3000'
+  );
 }
 
 function parsePaymentConfirmationMetadata(
@@ -167,7 +172,7 @@ export async function sendPaymentInstructions(
 ): Promise<PaymentInstructionResult> {
   const paymentReference = getPaymentReference(lead.id);
   const commitmentSelection = await getLeadCommitmentSelection(lead.id);
-  const chatUrl = `${getAppBaseUrl()}/chat/${lead.id}`;
+  const chatUrl = buildInvestorAccessUrl(getAppBaseUrl(), lead.email);
 
   await logAuditEvent({
     leadId: lead.id,

@@ -7,6 +7,7 @@ import { execute } from '@/lib/db/client';
 import {
   getLatestQualificationAnswerMap,
 } from '@/lib/db/qualification';
+import { buildInvestorAccessUrl } from '@/lib/chat/access-link';
 import {
   getNextQualificationQuestion,
   type QualificationQuestion,
@@ -247,7 +248,7 @@ export async function POST(
     const qualificationState = await getQualificationState(leadId, nextStage);
 
     if (updatedLead.stage === 'deal_room' && lead.stage !== 'deal_room') {
-      const chatLink = `${appUrl}/chat/${lead.id}`;
+      const chatLink = buildInvestorAccessUrl(appUrl, lead.email);
       const emailTemplate = getDealRoomAccessEmailTemplate({
         investorName: lead.full_name || 'there',
         chatLink,

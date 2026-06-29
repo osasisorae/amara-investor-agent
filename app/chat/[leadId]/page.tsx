@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import type { ChatMessage } from '@/lib/chat/messages';
+import { buildInvestorAccessPath } from '@/lib/chat/access-link';
 import type { LeadStage } from '@/lib/db/leads';
 import type {
   AgreementReadyComponentData,
@@ -234,6 +235,7 @@ function renderPipelineStatus(data: PipelineStatusComponentData) {
 
 export default function ChatPage() {
   const params = useParams();
+  const router = useRouter();
   const leadId = params.leadId as string;
   const { notify } = useFeedback();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -352,6 +354,11 @@ export default function ChatPage() {
         });
         const data = await response.json();
 
+        if (response.status === 401 || response.status === 403) {
+          redirectToAccess(lead?.email);
+          return;
+        }
+
         if (!response.ok) {
           console.error('Failed to poll chat messages:', data.error);
           return;
@@ -428,10 +435,24 @@ export default function ChatPage() {
     lead?.stage === 'pending_human_review' ||
     lead?.stage === 'kyc_rejected';
 
+  const redirectToAccess = (email?: string) => {
+    router.replace(
+      buildInvestorAccessPath({
+        email,
+        reason: 'session_required',
+      })
+    );
+  };
+
   const loadChat = async () => {
     try {
       const response = await fetch(`/api/chat/${leadId}`);
       const data = await response.json();
+
+      if (response.status === 401 || response.status === 403) {
+        redirectToAccess();
+        return;
+      }
 
       if (!response.ok) {
         notify({
@@ -487,6 +508,14 @@ export default function ChatPage() {
         body: JSON.stringify({ message: userMessage }),
       });
       const data = await response.json();
+
+      if (response.status === 401 || response.status === 403) {
+        setMessages((current) =>
+          current.filter((message) => message.id !== tempUserMessage.id)
+        );
+        redirectToAccess(lead?.email);
+        return;
+      }
 
       if (!response.ok) {
         setMessages((current) =>
