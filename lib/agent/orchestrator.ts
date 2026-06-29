@@ -39,6 +39,12 @@ import {
   buildGuidedDealRoomAnswer,
   buildGuidedQuestionsData,
 } from '@/lib/knowledge-base/deal-room-data';
+import {
+  DEAL_ROOM_PROCEED_TO_KYC_PROMPT,
+  detectDealRoomKycIntent,
+  deriveDealRoomQuestionCoverage,
+  isLikelyCustomDealRoomQuestion,
+} from '@/lib/deal-room/guidance';
 import { searchKnowledgeBaseStructured } from '@/lib/knowledge-base/loader';
 import {
   type QwenConversationMessage,
@@ -561,7 +567,7 @@ Operational rules:
 - If the investor asks for documents, downloads, or wants source materials, call \`emit_ui_component\` with \`component: "document_list"\`.
 - If you answer a substantive due diligence question and there is no previous assistant message containing \`[ui:document_list]\`, proactively emit \`document_list\` once after your answer.
 - If the search result shows no relevant answer, call \`flag_for_human_review\` with a concise reason, then tell the investor: "That's a great question that needs a direct answer from our team. I've flagged it for follow-up."
-- If the investor clearly says they are ready to move forward, call \`log_audit_event\` with \`deal_room_accessed\`, then call \`update_lead_stage\` to \`kyc_intake\`. Do not send them to another page. Tell them they can upload documents right here in the chat.
+- Do not move the investor into KYC just because they ask about next steps. Only move them when they explicitly want to start KYC now or clearly confirm they are ready to move forward without more questions.
 - Use \`emit_ui_component\` instead of narrating a dashboard. All UI appears as chat bubbles.
 - Keep answers concise and practical.
 `;
@@ -858,6 +864,17 @@ export class AgentOrchestrator {
     message: string,
     context: ProcessMessageContext
   ): Promise<HandlerResult> {
+    const dealRoomCoverage = await this.getDealRoomQuestionCoverage(lead.id);
+    const kycIntent = detectDealRoomKycIntent(message);
+
+    if (kycIntent) {
+      return this.handleDealRoomKycIntent(
+        lead,
+        dealRoomCoverage,
+        kycIntent
+      );
+    }
+
     const guidedAnswer = buildGuidedDealRoomAnswer(message);
 
     if (guidedAnswer) {
@@ -944,63 +961,76 @@ export class AgentOrchestrator {
   }
 
   private isLikelyDealRoomKnowledgeQuestion(message: string): boolean {
-    const normalized = message.toLowerCase().trim();
+    return isLikelyCustomDealRoomQuestion(message);
+  }
 
-    if (!normalized) {
-      return false;
-    }
+  private async getDealRoomQuestionCoverage(leadId: string) {
+    const messages = await getMessagesByLeadId(leadId);
 
-    if (
-      [
-        'hi',
-        'hello',
-        'hey',
-        'thanks',
-        'thank you',
-        'okay',
-        'ok',
-        'great',
-        'sounds good',
-      ].includes(normalized)
-    ) {
-      return false;
-    }
-
-    if (
-      normalized.includes('ready to move forward') ||
-      normalized.includes('ready for kyc') ||
-      normalized.includes('ready to proceed') ||
-      normalized.includes('let us proceed') ||
-      normalized.includes("let's proceed") ||
-      normalized.includes("i'm ready") ||
-      normalized.includes('upload') ||
-      normalized.includes('move to kyc')
-    ) {
-      return false;
-    }
-
-    return (
-      normalized.includes('?') ||
-      [
-        'return',
-        'revenue',
-        'risk',
-        'timeline',
-        'exit',
-        'spv',
-        'ownership',
-        'ticket',
-        'construction',
-        'operations',
-        'diaspora',
-        'move money',
-        'repatriate',
-        'fee',
-        'yield',
-        'deal room',
-        'investment',
-      ].some((term) => normalized.includes(term))
+    return deriveDealRoomQuestionCoverage(
+      messages.map((message) => ({
+        role: message.role,
+        text: message.content,
+      }))
     );
+  }
+
+  private async handleDealRoomKycIntent(
+    lead: Lead,
+    coverage: ReturnType<typeof deriveDealRoomQuestionCoverage>,
+    intent: ReturnType<typeof detectDealRoomKycIntent>
+  ): Promise<HandlerResult> {
+    if (!coverage.readyForKyc && intent !== 'hard') {
+      const suggestedQuestions = coverage.suggestedQuestions.filter(
+        (question) => question !== DEAL_ROOM_PROCEED_TO_KYC_PROMPT
+      );
+      const emissions: AgentEmission[] = [
+        this.emitTextMessage(
+          `We can move into KYC whenever you're comfortable, but I would usually suggest pressure-testing a few more points first. I've put the next best questions below. If you already feel clear on the deal and want to move ahead anyway, say "Proceed to KYC now".`
+        ),
+      ];
+
+      if (suggestedQuestions.length) {
+        emissions.push(
+          this.emitComponentMessage(
+            lead.id,
+            'guided_questions',
+            buildGuidedQuestionsData(suggestedQuestions)
+          )
+        );
+      }
+
+      return { emissions };
+    }
+
+    await applyOrchestratorStageTransition(lead.id, lead.stage, 'kyc_intake');
+    await logAuditEvent({
+      leadId: lead.id,
+      eventType: 'deal_room_accessed',
+      metadata: {
+        question_count: coverage.totalQuestionCount,
+        distinct_question_types: coverage.distinctQuestionCount,
+        explicit_override: !coverage.readyForKyc && intent === 'hard',
+      },
+    });
+
+    const emissions: AgentEmission[] = [
+      this.emitTextMessage(
+        "Understood. I'll open the KYC flow here in the chat now."
+      ),
+    ];
+
+    this.appendStageTransitionEmissions(
+      lead.id,
+      'kyc_intake',
+      [],
+      emissions
+    );
+
+    return {
+      emissions,
+      shouldUpdateStage: 'kyc_intake',
+    };
   }
 
   private async maybeAppendDealRoomDocuments(

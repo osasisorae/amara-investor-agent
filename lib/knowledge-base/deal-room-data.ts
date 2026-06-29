@@ -20,6 +20,11 @@ import {
   MINIMUM_HOLD_YEARS,
   MINIMUM_TICKET_NGN,
 } from '@/lib/agent/qualification';
+import {
+  getCoreDealRoomQuestionLabels,
+  matchCoreDealRoomQuestion,
+  type CoreDealRoomQuestionId,
+} from '@/lib/deal-room/guidance';
 
 const AKWA_IBOM_BRIEF_PATH = path.join(
   process.cwd(),
@@ -30,14 +35,7 @@ const AKWA_IBOM_BRIEF_PATH = path.join(
 export type GuidedDealRoomQuestionId =
   | 'deal_brief'
   | 'spv_structure'
-  | 'returns_breakdown'
-  | 'ownership'
-  | 'revenue_model'
-  | 'risks'
-  | 'year_five'
-  | 'diaspora_transfer'
-  | 'timeline'
-  | 'fees';
+  | CoreDealRoomQuestionId;
 
 export interface GuidedDealRoomAnswer {
   text: string;
@@ -75,44 +73,6 @@ export interface GuidedDealRoomAnswer {
         data: ExitCardComponentData;
       };
 }
-
-const GUIDED_DEAL_ROOM_QUESTIONS: Array<{
-  id: GuidedDealRoomQuestionId;
-  label: string;
-}> = [
-  {
-    id: 'returns_breakdown',
-    label: 'Walk me through the full return breakdown',
-  },
-  {
-    id: 'ownership',
-    label: 'What does my ₦5M actually own in this SPV?',
-  },
-  {
-    id: 'revenue_model',
-    label: 'Show me the revenue model',
-  },
-  {
-    id: 'risks',
-    label: 'What are the risks and how are they mitigated?',
-  },
-  {
-    id: 'year_five',
-    label: 'What happens at Year 5?',
-  },
-  {
-    id: 'diaspora_transfer',
-    label: 'How do I move money in as a diaspora investor?',
-  },
-  {
-    id: 'timeline',
-    label: 'Show me the construction and operations timeline',
-  },
-  {
-    id: 'fees',
-    label: "What is FutureX's fee and how do they make money?",
-  },
-];
 
 function loadAkwaIbomBrief(): string {
   if (!fs.existsSync(AKWA_IBOM_BRIEF_PATH)) {
@@ -270,10 +230,12 @@ function buildGuidedQuestionTitle(): string {
   return 'Here are the questions serious investors ask about this deal. Tap any to get a detailed answer:';
 }
 
-export function buildGuidedQuestionsData(): GuidedQuestionsComponentData {
+export function buildGuidedQuestionsData(
+  questions: string[] = getCoreDealRoomQuestionLabels()
+): GuidedQuestionsComponentData {
   return {
     title: buildGuidedQuestionTitle(),
-    questions: GUIDED_DEAL_ROOM_QUESTIONS.map((question) => question.label),
+    questions,
   };
 }
 
@@ -761,87 +723,7 @@ export function matchGuidedDealRoomQuestion(
     return 'spv_structure';
   }
 
-  if (
-    normalized.includes('return breakdown') ||
-    normalized.includes('full return') ||
-    normalized.includes('expected return') ||
-    normalized.includes('total proceeds') ||
-    normalized.includes('multiple')
-  ) {
-    return 'returns_breakdown';
-  }
-
-  if (
-    normalized.includes('₦5m') ||
-    normalized.includes('what does my 5m') ||
-    normalized.includes('5m actually own') ||
-    normalized.includes('what do i own') ||
-    normalized.includes('what do i get') ||
-    normalized.includes('own in this spv') ||
-    normalized.includes('fractional economic interest')
-  ) {
-    return 'ownership';
-  }
-
-  if (
-    normalized.includes('revenue model') ||
-    normalized.includes('revenue stream') ||
-    normalized.includes('rooms') ||
-    normalized.includes('restaurant') ||
-    normalized.includes('lounge')
-  ) {
-    return 'revenue_model';
-  }
-
-  if (
-    normalized.includes('risks') ||
-    normalized.includes('mitigated') ||
-    normalized.includes('mitigation')
-  ) {
-    return 'risks';
-  }
-
-  if (
-    normalized.includes('year 5') ||
-    normalized.includes('year five') ||
-    normalized.includes('what happens at the end') ||
-    normalized.includes('end of the 5-year') ||
-    normalized.includes('exit')
-  ) {
-    return 'year_five';
-  }
-
-  if (
-    normalized.includes('diaspora investor') ||
-    normalized.includes('move money') ||
-    normalized.includes('send money') ||
-    normalized.includes('wire') ||
-    normalized.includes('repatriate')
-  ) {
-    return 'diaspora_transfer';
-  }
-
-  if (
-    normalized.includes('timeline') ||
-    normalized.includes('construction') ||
-    normalized.includes('operations timeline') ||
-    normalized.includes('month 60')
-  ) {
-    return 'timeline';
-  }
-
-  if (
-    normalized.includes('futurex fee') ||
-    normalized.includes('fees') ||
-    normalized.includes('charging') ||
-    normalized.includes('how do they make money') ||
-    normalized.includes('management fee') ||
-    normalized.includes('syndication fee')
-  ) {
-    return 'fees';
-  }
-
-  return null;
+  return matchCoreDealRoomQuestion(query);
 }
 
 export function buildGuidedDealRoomAnswer(

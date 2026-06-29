@@ -59,6 +59,7 @@ import { KYCUploadCardBoundary } from '@/components/deal-room/kyc/KYCUploadCardB
 import { KYCUploadCard } from '@/components/deal-room/kyc/KYCUploadCard';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
+import { buildDealRoomComposerGuidance } from '@/lib/deal-room/guidance';
 
 interface Lead {
   id: string;
@@ -458,11 +459,27 @@ export default function ChatPage() {
     () => getStarterPrompts(lead?.stage || 'outreach_sent'),
     [lead?.stage]
   );
+  const dealRoomComposerGuidance = useMemo(() => {
+    if (lead?.stage !== 'deal_room') {
+      return null;
+    }
+
+    return buildDealRoomComposerGuidance(
+      messages.map((message) => ({
+        role: message.role,
+        text: message.role === 'investor' ? message.text : getAgentMessageText(message),
+      }))
+    );
+  }, [lead?.stage, messages]);
   const latestMessage = messages.at(-1);
   const shouldShowStarterPrompts = messages.length === 0;
   const shouldShowBinaryQuickReplies =
     latestMessage?.role === 'agent' &&
     latestMessage.metadata?.expectsBinaryResponse === true;
+  const shouldShowDealRoomQuickReplies =
+    lead?.stage === 'deal_room' &&
+    !shouldShowBinaryQuickReplies &&
+    Boolean(dealRoomComposerGuidance?.questions.length);
 
   const disableInput =
     sending ||
@@ -1100,6 +1117,25 @@ export default function ChatPage() {
               ))}
             </div>
           )}
+
+          {shouldShowDealRoomQuickReplies && dealRoomComposerGuidance ? (
+            <div className="mb-4 space-y-2">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                {dealRoomComposerGuidance.title}
+              </div>
+              <div className="text-sm text-futurex-muted">
+                {dealRoomComposerGuidance.helperText}
+              </div>
+              <GuidedQuestionChips
+                data={{
+                  title: dealRoomComposerGuidance.title,
+                  questions: dealRoomComposerGuidance.questions,
+                }}
+                disabled={sending || disableInput}
+                onSelect={submitMessage}
+              />
+            </div>
+          ) : null}
 
           {shouldShowBinaryQuickReplies ? (
             <div className="mb-4 flex gap-2">
