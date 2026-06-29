@@ -173,14 +173,14 @@ export function getKYCApprovalEmailTemplate(params: {
       <p>Your documents have been reviewed and <strong class="gold">approved</strong> by the FutureX compliance team. You are now cleared to review and sign the investment agreement.</p>
 
       <div class="alert">
-        <strong>Next step:</strong> review and sign your agreement using the secure link below.
+        <strong>Next step:</strong> verify your email, then review and sign your agreement using the secure link below.
       </div>
 
       <p>The agreement contains your subscription into the ${SPV_NAME}, the minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms, governance provisions, and the full risk disclosures.</p>
 
       <p>Please review it carefully. When you are ready to sign, you will verify with a one time code sent to your email.</p>
 
-      <a href="${params.agreementLink}" class="cta">Review Agreement →</a>
+      <a href="${params.agreementLink}" class="cta">Verify Email and Review Agreement →</a>
 
       <p>If anything is unclear, continue the conversation in your deal room before signing.</p>
 
@@ -194,13 +194,13 @@ Your KYC review is complete, ${params.investorName}.
 
 Your documents have been reviewed and approved by the FutureX compliance team. You are now cleared to review and sign the investment agreement.
 
-Next step: review and sign your agreement using the secure link below.
+Next step: verify your email, then review and sign your agreement using the secure link below.
 
 The agreement contains your subscription into the ${SPV_NAME}, the minimum ${MINIMUM_HOLD_YEARS}-year hold period and exit terms, governance provisions, and the full risk disclosures.
 
 Please review it carefully. When you are ready to sign, you will verify with a one time code sent to your email.
 
-Review Agreement: ${params.agreementLink}
+Verify email and review agreement: ${params.agreementLink}
 
 If anything is unclear, continue the conversation in your deal room before signing.
 

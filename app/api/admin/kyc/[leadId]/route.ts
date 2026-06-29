@@ -5,6 +5,7 @@ import {
   buildPipelineStatusData,
   createComponentMetadata,
 } from '@/lib/chat/components';
+import { buildInvestorAccessUrl } from '@/lib/chat/access-link';
 import { logAuditEvent } from '@/lib/db/audit';
 import { execute } from '@/lib/db/client';
 import { deleteKycDocumentsByLeadId } from '@/lib/db/kyc';
@@ -328,7 +329,11 @@ export async function POST(
       const appUrl =
         process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
         new URL(request.url).origin;
-      const agreementLink = `${appUrl}/agreement/${leadId}`;
+      const agreementLink = buildInvestorAccessUrl(
+        appUrl,
+        lead.email,
+        `/agreement/${leadId}`
+      );
       const emailTemplate = getKYCApprovalEmailTemplate({
         investorName: lead.full_name || 'Investor',
         agreementLink,

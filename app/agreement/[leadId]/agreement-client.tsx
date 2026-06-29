@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AGREEMENT_VERSION,
   FUTUREX_LEGAL_NAME,
   getAgreementMarkdown,
 } from '@/lib/agreement/template';
+import { buildInvestorAccessPath } from '@/lib/chat/access-link';
 import { markdownToHtml } from '@/lib/utils/markdown';
 import { useFeedback } from '@/components/feedback-provider';
 import {
@@ -60,6 +62,7 @@ export default function AgreementClient({
   initialCommitment,
   agreementVersion,
 }: AgreementClientProps) {
+  const router = useRouter();
   const { notify } = useFeedback();
   const [stage, setStage] = useState(lead.stage);
   const [fullName, setFullName] = useState(lead.full_name || '');
@@ -94,6 +97,16 @@ export default function AgreementClient({
   const agreementPreviewHtml = markdownToHtml(
     agreementPreviewMarkdown || agreementMarkdown
   );
+
+  const redirectToAccess = () => {
+    router.replace(
+      buildInvestorAccessPath({
+        email: lead.email,
+        reason: 'session_required',
+        next: `/agreement/${lead.id}`,
+      })
+    );
+  };
 
   const resetOtpState = (showNotice: boolean) => {
     if (!otpSent && !otpCode) {
@@ -147,6 +160,11 @@ export default function AgreementClient({
         }),
       });
       const data = await response.json();
+
+      if (response.status === 401) {
+        redirectToAccess();
+        return;
+      }
 
       if (!response.ok) {
         notify({
@@ -202,6 +220,11 @@ export default function AgreementClient({
         }),
       });
       const data = await response.json();
+
+      if (response.status === 401) {
+        redirectToAccess();
+        return;
+      }
 
       if (!response.ok) {
         notify({

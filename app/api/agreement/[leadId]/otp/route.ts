@@ -5,6 +5,7 @@ import { getLeadById } from '@/lib/db/leads';
 import { createOtpCode } from '@/lib/db/otp';
 import { sendEmail } from '@/lib/email/resend-client';
 import { getOtpEmailTemplate } from '@/lib/email/templates';
+import { verifyInvestorSession } from '@/lib/investor-auth';
 import { saveLeadCommitmentSelection } from '@/lib/payment';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
@@ -16,6 +17,12 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    const session = await verifyInvestorSession(request, leadId);
+
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const slotCount = coerceCommitmentSlotCount(body.slotCount);
 

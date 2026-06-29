@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { isInvestorAccessNextPath } from '@/lib/chat/access-link';
 import { useFeedback } from '@/components/feedback-provider';
 
 const GENERIC_ACCESS_MESSAGE =
@@ -17,11 +18,13 @@ export default function ChatAccessPage() {
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [otpRequested, setOtpRequested] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [nextPath, setNextPath] = useState<string | null>(null);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const prefilledEmail = searchParams.get('email')?.trim().toLowerCase();
     const accessReason = searchParams.get('reason');
+    const next = searchParams.get('next');
 
     if (prefilledEmail) {
       setEmail((current) => current || prefilledEmail);
@@ -31,6 +34,10 @@ export default function ChatAccessPage() {
       setStatusMessage((current) =>
         current || 'Verify your email to reopen your FutureX conversation.'
       );
+    }
+
+    if (isInvestorAccessNextPath(next)) {
+      setNextPath(next);
     }
   }, []);
 
@@ -100,7 +107,7 @@ export default function ChatAccessPage() {
         return;
       }
 
-      router.push(`/chat/${data.leadId}`);
+      router.push(nextPath || `/chat/${data.leadId}`);
     } catch (error) {
       console.error('Failed to verify investor chat access:', error);
       notify({

@@ -6,8 +6,8 @@
 | --- | --- | --- | --- |
 | SEC-001 | Critical | Authentication | RESOLVED |
 | SEC-002 | Critical | Data Exposure | RESOLVED |
-| SEC-003 | High | Authorization | OPEN |
-| SEC-004 | High | Authentication | OPEN |
+| SEC-003 | High | Authorization | RESOLVED |
+| SEC-004 | High | Authentication | RESOLVED |
 | SEC-005 | High | OTP Security | OPEN |
 | SEC-006 | High | OTP Security | OPEN |
 | SEC-007 | High | Agent / Prompt Injection | OPEN |
@@ -16,7 +16,7 @@
 | SEC-010 | Medium | Authentication | OPEN |
 | SEC-011 | Medium | Authentication | OPEN |
 | SEC-012 | Medium | Input Validation | OPEN |
-| SEC-013 | Medium | Authorization | OPEN |
+| SEC-013 | Medium | Authorization | RESOLVED |
 | SEC-014 | Medium | JWT Hardening | OPEN |
 | SEC-015 | Medium | Secrets & Environment | OPEN |
 | SEC-016 | Medium | Secrets & Environment | OPEN |
@@ -87,8 +87,9 @@ ID: SEC-003
 Severity: High
 Area: Authorization
 File: app/agreement/[leadId]/page.tsx (line 23)
-Status: OPEN
+Status: RESOLVED
 Description: The agreement page is not bound to an investor session. Any holder of a KYC approved leadId can load the agreement page and view the investor agreement details.
+Resolved: The agreement page now requires a matching investor session and redirects unauthenticated users into the verified access flow before rendering.
 Fix planned: Yes
 ---
 
@@ -97,8 +98,9 @@ ID: SEC-004
 Severity: High
 Area: Authentication
 File: app/api/agreement/[leadId]/otp/route.ts (line 13), app/api/agreement/[leadId]/sign/route.ts (line 28)
-Status: OPEN
+Status: RESOLVED
 Description: Agreement OTP issuance and agreement signing are handled by public routes with no investor session verification. Sensitive signing actions are therefore authorized only by leadId and OTP.
+Resolved: Both agreement OTP issuance and signing routes now require a verified investor session for the matching leadId before any action is processed.
 Fix planned: Yes
 ---
 
@@ -187,8 +189,9 @@ ID: SEC-013
 Severity: Medium
 Area: Authorization
 File: app/api/agreement/[leadId]/otp/route.ts (line 49)
-Status: OPEN
+Status: RESOLVED
 Description: Agreement OTP issuance persists slot count before any session verification. A caller who knows a leadId can tamper with the stored commitment selection and disrupt the signing flow.
+Resolved: Agreement OTP issuance now verifies the investor session before persisting slot count, preventing unauthorized commitment tampering by leadId alone.
 Fix planned: Yes
 ---
 

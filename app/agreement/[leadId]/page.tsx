@@ -7,12 +7,14 @@ import {
   buildAgreementInvestorParty,
   getAgreementMarkdown,
 } from '@/lib/agreement/template';
+import { buildInvestorAccessPath } from '@/lib/chat/access-link';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
   getLeadById,
   markAgreementViewed,
 } from '@/lib/db/leads';
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
+import { getInvestorSession } from '@/lib/investor-auth';
 import { getLeadCommitmentSelection } from '@/lib/payment';
 
 export default async function AgreementPage({
@@ -24,6 +26,17 @@ export default async function AgreementPage({
 
   if (!lead) {
     notFound();
+  }
+
+  const investorSession = await getInvestorSession();
+
+  if (!investorSession || investorSession.leadId !== params.leadId) {
+    redirect(
+      buildInvestorAccessPath({
+        reason: 'session_required',
+        next: `/agreement/${params.leadId}`,
+      })
+    );
   }
 
   if (lead.kyc_approved !== 1 || !lead.approved_by) {

@@ -17,6 +17,7 @@ import {
 import { saveMessage } from '@/lib/db/messages';
 import { consumeOtpCode } from '@/lib/db/otp';
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
+import { verifyInvestorSession } from '@/lib/investor-auth';
 import {
   getLeadCommitmentSelection,
   getPaymentReference,
@@ -31,6 +32,12 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    const session = await verifyInvestorSession(request, leadId);
+
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const fullName =
       typeof body.fullName === 'string' ? body.fullName.trim() : '';
