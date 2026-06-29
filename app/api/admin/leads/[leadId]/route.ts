@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logAuditEvent } from '@/lib/db/audit';
 import { query } from '@/lib/db/client';
 import { getLeadById, deleteLeadCascade } from '@/lib/db/leads';
-import { getRecentMessagesByLeadId } from '@/lib/db/messages';
+import { getRecentMessagesByLeadId, saveMessage } from '@/lib/db/messages';
 import { verifyAdminSession } from '@/lib/admin-auth';
 
 interface AuditEventRow {
@@ -107,12 +107,32 @@ export async function GET(
             ? reviewState.resolvedMetadata.resolved_by
             : null,
       },
-      messages: messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        createdAt: message.created_at,
-      })),
+      messages: messages.map((message) => {
+        const metadata = parseMetadata(message.metadata);
+        const isFuturexTeamMessage =
+          message.role === 'agent' &&
+          (metadata?.senderType === 'futurex_team' ||
+            /^FutureX team:\s*/i.test(message.content));
+
+        return {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.created_at,
+          senderType:
+            message.role === 'investor'
+              ? 'investor'
+              : isFuturexTeamMessage
+                ? 'futurex_team'
+                : 'amara',
+          senderLabel:
+            message.role === 'investor'
+              ? 'Investor'
+              : isFuturexTeamMessage
+                ? 'FutureX Team'
+                : 'Amara',
+        };
+      }),
     });
   } catch (error) {
     console.error('Error fetching admin support review:', error);
@@ -135,15 +155,7 @@ export async function POST(
 
     const { leadId } = params;
     const body = (await request.json()) as Record<string, unknown>;
-    const action =
-      typeof body.action === 'string' ? body.action.trim() : '';
-
-    if (action !== 'resolve_human_review') {
-      return NextResponse.json(
-        { error: 'Invalid action' },
-        { status: 400 }
-      );
-    }
+    const action = typeof body.action === 'string' ? body.action.trim() : '';
 
     const lead = await getLeadById(leadId);
     if (!lead) {
@@ -157,6 +169,58 @@ export async function POST(
         { error: 'No open follow-up request for this lead.' },
         { status: 400 }
       );
+    }
+
+    if (action === 'send_human_review_reply') {
+      const message =
+        typeof body.message === 'string' ? body.message.trim() : '';
+
+      if (!message) {
+        return NextResponse.json(
+          { error: 'Reply message is required.' },
+          { status: 400 }
+        );
+      }
+
+      if (message.length > 2000) {
+        return NextResponse.json(
+          { error: 'Reply message must be 2000 characters or fewer.' },
+          { status: 400 }
+        );
+      }
+
+      await saveMessage({
+        leadId,
+        role: 'agent',
+        content: message,
+        metadata: {
+          senderType: 'futurex_team',
+          senderLabel: 'FutureX Team',
+        },
+      });
+
+      await logAuditEvent({
+        leadId,
+        eventType: 'human_review_resolved',
+        metadata: {
+          resolved_by: session.email,
+          resolution: 'reply_sent',
+          request_reason:
+            reviewState.requestMetadata?.reason &&
+            typeof reviewState.requestMetadata.reason === 'string'
+              ? reviewState.requestMetadata.reason
+              : null,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        action: 'sent_human_review_reply',
+      });
+    }
+
+    if (action !== 'resolve_human_review') {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
     await logAuditEvent({

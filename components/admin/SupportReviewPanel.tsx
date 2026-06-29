@@ -8,6 +8,8 @@ interface ReviewMessage {
   role: 'agent' | 'investor';
   content: string;
   createdAt: number;
+  senderType?: 'investor' | 'amara' | 'futurex_team';
+  senderLabel?: string;
 }
 
 interface SupportReviewData {
@@ -43,6 +45,17 @@ function formatTimestamp(value: number | null) {
   return new Date(value * 1000).toLocaleString();
 }
 
+function getPreviewMessageContent(message: ReviewMessage) {
+  if (
+    message.senderType === 'futurex_team' &&
+    /^FutureX team:\s*/i.test(message.content)
+  ) {
+    return message.content.replace(/^FutureX team:\s*/i, '');
+  }
+
+  return message.content;
+}
+
 export function SupportReviewPanel({
   leadId,
   isOpen,
@@ -53,7 +66,10 @@ export function SupportReviewPanel({
   const [data, setData] = useState<SupportReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [submittingAction, setSubmittingAction] = useState<
+    'resolve' | 'reply' | null
+  >(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -83,6 +99,7 @@ export function SupportReviewPanel({
         }
 
         setData(payload);
+        setReplyMessage('');
       } catch (loadError) {
         console.error('Failed to load support review panel:', loadError);
         setError('Failed to load follow-up review details.');
@@ -95,11 +112,11 @@ export function SupportReviewPanel({
   }, [isOpen, leadId, onUnauthorized]);
 
   const markReviewed = async () => {
-    if (submitting) {
+    if (submittingAction) {
       return;
     }
 
-    setSubmitting(true);
+    setSubmittingAction('resolve');
 
     try {
       const response = await fetch(`/api/admin/leads/${leadId}`, {
@@ -142,7 +159,73 @@ export function SupportReviewPanel({
         tone: 'error',
       });
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
+    }
+  };
+
+  const sendReply = async () => {
+    if (submittingAction) {
+      return;
+    }
+
+    const message = replyMessage.trim();
+
+    if (!message) {
+      notify({
+        title: 'Reply required',
+        message: 'Enter a reply before sending it to the investor.',
+        tone: 'error',
+      });
+      return;
+    }
+
+    setSubmittingAction('reply');
+
+    try {
+      const response = await fetch(`/api/admin/leads/${leadId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'send_human_review_reply',
+          message,
+        }),
+      });
+
+      if (onUnauthorized(response)) {
+        return;
+      }
+
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        notify({
+          title: 'Reply not sent',
+          message: payload.error || 'Failed to send reply to investor.',
+          tone: 'error',
+        });
+        return;
+      }
+
+      notify({
+        title: 'Reply sent',
+        message:
+          'The investor will see this reply in their chat and the follow-up request has been resolved.',
+        tone: 'success',
+      });
+      setReplyMessage('');
+      setData(null);
+      onComplete();
+    } catch (sendError) {
+      console.error('Failed to send support reply:', sendError);
+      notify({
+        title: 'Reply not sent',
+        message: 'Failed to send reply to investor.',
+        tone: 'error',
+      });
+    } finally {
+      setSubmittingAction(null);
     }
   };
 
@@ -226,14 +309,18 @@ export function SupportReviewPanel({
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-semibold text-futurex-ink">
-                            {message.role === 'investor' ? 'Investor' : 'Amara'}
+                            {message.senderLabel ||
+                              (message.role === 'investor'
+                                ? 'Investor'
+                                : 'Amara')}
                           </div>
                           <div className="text-xs text-futurex-muted">
                             {formatTimestamp(message.createdAt)}
                           </div>
                         </div>
                         <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-futurex-muted">
-                          {message.content || '[Structured UI message]'}
+                          {getPreviewMessageContent(message) ||
+                            '[Structured UI message]'}
                         </div>
                       </div>
                     ))
@@ -247,13 +334,51 @@ export function SupportReviewPanel({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1 rounded-2xl border border-futurex-line bg-futurex-surface2 p-4">
+                <div className="text-[11px] uppercase tracking-[0.14em] text-futurex-muted">
+                  Reply in chat
+                </div>
+                <div className="mt-2 text-sm text-futurex-muted">
+                  Send a direct team response into the investor conversation.
+                  This also closes the open follow-up request.
+                </div>
+                <textarea
+                  value={replyMessage}
+                  onChange={(event) => setReplyMessage(event.target.value)}
+                  rows={4}
+                  maxLength={2000}
+                  disabled={Boolean(submittingAction) || !data.reviewRequest.open}
+                  className="mt-4 w-full rounded-2xl border border-futurex-line bg-futurex-surface px-4 py-3 text-sm text-futurex-ink outline-none transition focus:border-futurex-gold disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder="Write the reply the investor should receive in chat."
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-futurex-muted">
+                    {replyMessage.trim().length}/2000 characters
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendReply}
+                    disabled={
+                      Boolean(submittingAction) ||
+                      !data.reviewRequest.open ||
+                      !replyMessage.trim()
+                    }
+                    className="rounded bg-futurex-gold px-4 py-2 text-sm font-semibold text-futurex-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submittingAction === 'reply'
+                      ? 'Sending...'
+                      : 'Send Reply to Investor'}
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={markReviewed}
-                disabled={submitting || !data.reviewRequest.open}
+                disabled={Boolean(submittingAction) || !data.reviewRequest.open}
                 className="rounded bg-amber-500 px-4 py-2 text-sm font-semibold text-futurex-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? 'Marking...' : 'Mark Reviewed'}
+                {submittingAction === 'resolve' ? 'Marking...' : 'Mark Reviewed'}
               </button>
               {!data.reviewRequest.open && data.reviewRequest.resolvedAt ? (
                 <div className="text-sm text-futurex-muted">

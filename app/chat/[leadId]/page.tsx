@@ -90,6 +90,8 @@ const QUALIFICATION_PLACEHOLDERS = {
   kyc_willingness: 'Type your response...',
 } as const;
 
+const FUTUREX_TEAM_PREFIX_PATTERN = /^FutureX team:\s*/i;
+
 function getStarterPrompts(stage: string): string[] {
   if (stage === 'agreement_pending') {
     return [
@@ -114,6 +116,38 @@ function getStarterPrompts(stage: string): string[] {
   }
 
   return [];
+}
+
+function isFuturexTeamMessage(message: ChatMessage) {
+  if (message.role !== 'agent') {
+    return false;
+  }
+
+  const senderType =
+    typeof message.metadata?.senderType === 'string'
+      ? message.metadata.senderType
+      : null;
+
+  return (
+    senderType === 'futurex_team' ||
+    (message.type === 'text' && FUTUREX_TEAM_PREFIX_PATTERN.test(message.text))
+  );
+}
+
+function getAgentSenderName(message: ChatMessage) {
+  return isFuturexTeamMessage(message) ? 'FutureX Team' : 'Amara';
+}
+
+function getAgentMessageText(message: ChatMessage) {
+  if (
+    isFuturexTeamMessage(message) &&
+    message.type === 'text' &&
+    FUTUREX_TEAM_PREFIX_PATTERN.test(message.text)
+  ) {
+    return message.text.replace(FUTUREX_TEAM_PREFIX_PATTERN, '');
+  }
+
+  return message.text;
 }
 
 function renderDealCard(data: DealCardComponentData) {
@@ -731,7 +765,7 @@ export default function ChatPage() {
         <div
           className="markdown-content whitespace-pre-wrap"
           dangerouslySetInnerHTML={{
-            __html: markdownToHtml(message.text),
+            __html: markdownToHtml(getAgentMessageText(message)),
           }}
         />
       );
@@ -982,15 +1016,27 @@ export default function ChatPage() {
                 >
                   {message.role === 'agent' ? (
                     <div className="flex w-full max-w-4xl items-start gap-3">
-                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
-                        <Image
-                          src="/amara-icon-cropped.jpeg"
-                          alt="Amara icon"
-                          width={36}
-                          height={36}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
+                      {isFuturexTeamMessage(message) ? (
+                        <div className="mt-1 flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#fffdf8] px-1 shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
+                          <Image
+                            src="/futurex-wordmark-email.png"
+                            alt="FutureX"
+                            width={40}
+                            height={24}
+                            className="h-auto w-full object-contain"
+                          />
+                        </div>
+                      ) : (
+                        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#fffdf8] shadow-[0_10px_22px_rgba(0,0,0,0.18)]">
+                          <Image
+                            src="/amara-icon-cropped.jpeg"
+                            alt="Amara icon"
+                            width={36}
+                            height={36}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      )}
                       <div
                         className={`rounded-2xl border border-futurex-line bg-futurex-surface px-5 py-4 text-futurex-ink ${
                           message.type === 'text'
@@ -999,7 +1045,7 @@ export default function ChatPage() {
                         }`}
                       >
                         <div className="mb-1 text-xs font-semibold text-futurex-gold">
-                          Amara
+                          {getAgentSenderName(message)}
                         </div>
                         {renderAgentContent(message)}
                         <div className="mt-2 text-xs text-futurex-muted">
