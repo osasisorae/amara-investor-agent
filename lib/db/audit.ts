@@ -10,6 +10,7 @@ export type AuditEventType =
   | 'deal_room_email_sent'
   | 'deal_room_accessed'
   | 'human_review_requested'
+  | 'human_review_resolved'
   | 'kyc_consent_given'
   | 'kyc_personal_details_submitted'
   | 'kyc_investor_profile_submitted'

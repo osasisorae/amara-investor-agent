@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { KycReviewPanel } from '@/components/admin/KycReviewPanel';
+import { SupportReviewPanel } from '@/components/admin/SupportReviewPanel';
 import { useFeedback } from '@/components/feedback-provider';
 
 interface Lead {
@@ -25,6 +26,10 @@ interface Lead {
   };
   opsSummary?: {
     humanReviewReason?: string | null;
+    humanReviewOpen?: boolean;
+    humanReviewRequestedAt?: number | null;
+    humanReviewResolvedAt?: number | null;
+    humanReviewResolvedBy?: string | null;
     paymentReference?: string | null;
     paymentConfirmedBy?: string | null;
   };
@@ -49,6 +54,9 @@ export default function AdminDashboardClient({
   const [expandedKycLeadId, setExpandedKycLeadId] = useState<string | null>(
     null
   );
+  const [expandedSupportLeadId, setExpandedSupportLeadId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     fetchLeads();
@@ -290,6 +298,9 @@ export default function AdminDashboardClient({
     );
 
   const canConfirmPayment = (lead: Lead) => lead.stage === 'payment_pending';
+  const hasOpenSupportRequest = (lead: Lead) =>
+    Boolean(lead.opsSummary?.humanReviewOpen);
+  const openSupportCount = leads.filter(hasOpenSupportRequest).length;
 
   return (
     <div className="min-h-screen bg-futurex-bg">
@@ -325,6 +336,19 @@ export default function AdminDashboardClient({
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
+        {openSupportCount > 0 ? (
+          <div className="mb-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-6">
+            <div className="text-sm font-semibold text-amber-100">
+              Admin attention needed
+            </div>
+            <div className="mt-1 text-sm text-amber-200/85">
+              {openSupportCount} investor
+              {openSupportCount === 1 ? '' : 's'} currently need direct team
+              follow-up from their chat.
+            </div>
+          </div>
+        ) : null}
+
         <div className="mb-8 rounded-lg border border-futurex-line bg-futurex-surface p-6">
           <h2 className="mb-4 text-2xl font-serif text-futurex-ink">
             Add Investor to Offeree Register
@@ -478,7 +502,9 @@ export default function AdminDashboardClient({
                           {lead.opsSummary?.humanReviewReason ? (
                             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100">
                               <span className="font-medium">
-                                Team follow-up:
+                                {lead.opsSummary?.humanReviewOpen
+                                  ? 'Needs team follow-up:'
+                                  : 'Last team follow-up:'}
                               </span>{' '}
                               {lead.opsSummary.humanReviewReason}
                             </div>
@@ -513,6 +539,21 @@ export default function AdminDashboardClient({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      {hasOpenSupportRequest(lead) ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedSupportLeadId((current) =>
+                              current === lead.id ? null : lead.id
+                            )
+                          }
+                          className="rounded border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-400 hover:bg-amber-500/15"
+                        >
+                          {expandedSupportLeadId === lead.id
+                            ? 'Hide Follow-up'
+                            : 'Review Follow-up'}
+                        </button>
+                      ) : null}
                       {lead.stage === 'pending_human_review' ? (
                         <button
                           type="button"
@@ -571,6 +612,18 @@ export default function AdminDashboardClient({
                       onUnauthorized={handleUnauthorized}
                       onComplete={() => {
                         setExpandedKycLeadId(null);
+                        fetchLeads();
+                      }}
+                    />
+                  ) : null}
+
+                  {hasOpenSupportRequest(lead) ? (
+                    <SupportReviewPanel
+                      leadId={lead.id}
+                      isOpen={expandedSupportLeadId === lead.id}
+                      onUnauthorized={handleUnauthorized}
+                      onComplete={() => {
+                        setExpandedSupportLeadId(null);
                         fetchLeads();
                       }}
                     />

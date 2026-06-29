@@ -181,6 +181,7 @@ export async function GET(request: NextRequest) {
          'qualification_failed',
          'future_interest_noted',
          'human_review_requested',
+         'human_review_resolved',
          'payment_instructions_sent',
          'payment_received'
        )
@@ -218,6 +219,7 @@ export async function GET(request: NextRequest) {
     const latestFailedEventByLead = new Map<string, AuditEventRow>();
     const latestFutureInterestByLead = new Map<string, AuditEventRow>();
     const latestHumanReviewByLead = new Map<string, AuditEventRow>();
+    const latestHumanReviewResolvedByLead = new Map<string, AuditEventRow>();
     const latestPaymentInstructionsByLead = new Map<string, AuditEventRow>();
     const latestPaymentReceivedByLead = new Map<string, AuditEventRow>();
     const messagesByLead = new Map<string, MessageRow[]>();
@@ -242,6 +244,13 @@ export async function GET(request: NextRequest) {
         !latestHumanReviewByLead.has(event.lead_id)
       ) {
         latestHumanReviewByLead.set(event.lead_id, event);
+      }
+
+      if (
+        event.event_type === 'human_review_resolved' &&
+        !latestHumanReviewResolvedByLead.has(event.lead_id)
+      ) {
+        latestHumanReviewResolvedByLead.set(event.lead_id, event);
       }
 
       if (
@@ -272,11 +281,17 @@ export async function GET(request: NextRequest) {
       const failedEvent = latestFailedEventByLead.get(lead.id);
       const futureInterestEvent = latestFutureInterestByLead.get(lead.id);
       const humanReviewEvent = latestHumanReviewByLead.get(lead.id);
+      const humanReviewResolvedEvent = latestHumanReviewResolvedByLead.get(
+        lead.id
+      );
       const paymentInstructionsEvent = latestPaymentInstructionsByLead.get(lead.id);
       const paymentReceivedEvent = latestPaymentReceivedByLead.get(lead.id);
       const failedMetadata = parseMetadata(failedEvent?.metadata);
       const futureInterestMetadata = parseMetadata(futureInterestEvent?.metadata);
       const humanReviewMetadata = parseMetadata(humanReviewEvent?.metadata);
+      const humanReviewResolvedMetadata = parseMetadata(
+        humanReviewResolvedEvent?.metadata
+      );
       const paymentInstructionsMetadata = parseMetadata(
         paymentInstructionsEvent?.metadata
       );
@@ -307,6 +322,11 @@ export async function GET(request: NextRequest) {
       const resolvedFutureInterestNote = isDisqualifiedLead
         ? futureInterestMetadata?.note || historicalSummary.futureInterestNote || null
         : null;
+      const hasOpenHumanReviewRequest = Boolean(
+        humanReviewEvent &&
+          (!humanReviewResolvedEvent ||
+            humanReviewResolvedEvent.created_at < humanReviewEvent.created_at)
+      );
 
       return {
         ...lead,
@@ -348,6 +368,14 @@ export async function GET(request: NextRequest) {
           humanReviewReason:
             humanReviewMetadata?.reason && typeof humanReviewMetadata.reason === 'string'
               ? humanReviewMetadata.reason
+              : null,
+          humanReviewOpen: hasOpenHumanReviewRequest,
+          humanReviewRequestedAt: humanReviewEvent?.created_at || null,
+          humanReviewResolvedAt: humanReviewResolvedEvent?.created_at || null,
+          humanReviewResolvedBy:
+            humanReviewResolvedMetadata?.resolved_by &&
+            typeof humanReviewResolvedMetadata.resolved_by === 'string'
+              ? humanReviewResolvedMetadata.resolved_by
               : null,
           paymentReference:
             paymentInstructionsMetadata?.payment_reference &&
