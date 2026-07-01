@@ -59,13 +59,14 @@ export async function POST(request: NextRequest) {
     const password =
       typeof body?.password === 'string' ? body.password : '';
     const ipAddress = getClientIpAddress(request);
+    const rateLimitIpAddress = ipAddress || 'unknown';
     const ipRateLimitKey = buildRateLimitKey({
       scope: 'admin-auth-ip',
-      keyParts: [ipAddress],
+      keyParts: [rateLimitIpAddress],
     });
     const emailRateLimitKey = buildRateLimitKey({
       scope: 'admin-auth-email',
-      keyParts: [ipAddress, email || 'anonymous'],
+      keyParts: [rateLimitIpAddress, email || 'anonymous'],
     });
     const ipRateLimit = checkSlidingWindowRateLimit({
       key: ipRateLimitKey,

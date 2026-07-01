@@ -17,7 +17,7 @@ import {
 } from '@/lib/security/otp-rate-limit';
 
 const CHAT_ACCESS_OTP_PURPOSE = 'chat_access';
-const CHAT_ACCESS_OTP_EXPIRY_MINUTES = 10;
+const CHAT_ACCESS_OTP_EXPIRY_MINUTES = 5;
 const CHAT_ACCESS_SEND_COOLDOWN_SECONDS = 60;
 const CHAT_ACCESS_SEND_WINDOW_SECONDS = 60 * 60;
 const CHAT_ACCESS_MAX_SENDS_PER_WINDOW = 5;
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
     const email =
       typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const ipAddress = getClientIpAddress(request);
+    const rateLimitIpAddress = ipAddress || 'unknown';
 
     if (!email) {
       return NextResponse.json(
@@ -63,7 +64,8 @@ export async function POST(request: NextRequest) {
     const requestLimit = consumeSlidingWindowRateLimit({
       key: buildOtpRateLimitKey({
         scope: 'chat-access-send',
-        ipAddress,
+        ipAddress: rateLimitIpAddress,
+        identifier: ipAddress ? undefined : email || 'anonymous',
       }),
       maxAttempts: CHAT_ACCESS_MAX_REQUESTS_PER_WINDOW,
       windowSeconds: CHAT_ACCESS_REQUEST_WINDOW_SECONDS,
@@ -157,6 +159,7 @@ export async function PATCH(request: NextRequest) {
       typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const code = typeof body.code === 'string' ? body.code.trim() : '';
     const ipAddress = getClientIpAddress(request);
+    const rateLimitIpAddress = ipAddress || 'unknown';
 
     if (!email || !code) {
       return NextResponse.json(
@@ -168,7 +171,8 @@ export async function PATCH(request: NextRequest) {
     const verifyLimit = consumeSlidingWindowRateLimit({
       key: buildOtpRateLimitKey({
         scope: 'chat-access-verify',
-        ipAddress,
+        ipAddress: rateLimitIpAddress,
+        identifier: ipAddress ? undefined : email || 'anonymous',
       }),
       maxAttempts: CHAT_ACCESS_MAX_VERIFY_ATTEMPTS,
       windowSeconds: CHAT_ACCESS_VERIFY_WINDOW_SECONDS,

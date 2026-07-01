@@ -15,7 +15,7 @@ import {
 } from '@/lib/security/otp-rate-limit';
 
 const AGREEMENT_OTP_PURPOSE = 'agreement_sign';
-const OTP_EXPIRY_MINUTES = 10;
+const OTP_EXPIRY_MINUTES = 5;
 const AGREEMENT_OTP_SEND_COOLDOWN_SECONDS = 60;
 const AGREEMENT_OTP_SEND_WINDOW_SECONDS = 60 * 60;
 const AGREEMENT_OTP_MAX_SENDS_PER_WINDOW = 5;
@@ -30,6 +30,7 @@ export async function POST(
     const { leadId } = params;
     const session = await verifyInvestorSession(request, leadId);
     const ipAddress = getClientIpAddress(request);
+    const rateLimitIpAddress = ipAddress || 'unknown';
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -38,7 +39,7 @@ export async function POST(
     const requestLimit = consumeSlidingWindowRateLimit({
       key: buildOtpRateLimitKey({
         scope: 'agreement-otp-send',
-        ipAddress,
+        ipAddress: rateLimitIpAddress,
         identifier: leadId,
       }),
       maxAttempts: AGREEMENT_OTP_MAX_REQUESTS_PER_WINDOW,

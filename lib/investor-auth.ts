@@ -1,61 +1,22 @@
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify, SignJWT } from 'jose';
-import { getRequiredJwtSecretBytes } from '@/lib/security/env';
+import {
+  INVESTOR_SESSION_COOKIE,
+  SESSION_COOKIE_MAX_AGE_SECONDS,
+} from '@/lib/security/session-cookies';
+import {
+  signInvestorSessionToken,
+  type InvestorSession,
+  verifyInvestorSessionToken,
+} from '@/lib/security/session-tokens';
 
-export const INVESTOR_SESSION_COOKIE = 'investor_session';
-
-const INVESTOR_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-const INVESTOR_JWT_SECRET = getRequiredJwtSecretBytes('INVESTOR_JWT_SECRET');
-
-export interface InvestorSession {
-  leadId: string;
-  email: string;
-  role: 'investor';
-}
-
-function getInvestorJwtSecret(): Uint8Array {
-  return INVESTOR_JWT_SECRET;
-}
-
-async function decodeInvestorSession(
-  token: string
-): Promise<InvestorSession | null> {
-  try {
-    const { payload } = await jwtVerify(token, getInvestorJwtSecret(), {
-      algorithms: ['HS256'],
-    });
-
-    if (
-      typeof payload.leadId !== 'string' ||
-      typeof payload.email !== 'string' ||
-      payload.role !== 'investor'
-    ) {
-      return null;
-    }
-
-    return {
-      leadId: payload.leadId,
-      email: payload.email,
-      role: 'investor',
-    };
-  } catch {
-    return null;
-  }
-}
+export { INVESTOR_SESSION_COOKIE };
+export type { InvestorSession };
 
 export async function signInvestorSession(
   session: InvestorSession
 ): Promise<string> {
-  return new SignJWT({
-    leadId: session.leadId,
-    email: session.email,
-    role: session.role,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(getInvestorJwtSecret());
+  return signInvestorSessionToken(session);
 }
 
 export async function verifyInvestorSession(
@@ -68,7 +29,7 @@ export async function verifyInvestorSession(
     return null;
   }
 
-  const session = await decodeInvestorSession(token);
+  const session = await verifyInvestorSessionToken(token);
 
   if (!session) {
     return null;
@@ -88,7 +49,7 @@ export async function getInvestorSession(): Promise<InvestorSession | null> {
     return null;
   }
 
-  return decodeInvestorSession(token);
+  return verifyInvestorSessionToken(token);
 }
 
 export function setInvestorSessionCookie(
@@ -102,7 +63,7 @@ export function setInvestorSessionCookie(
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
-    maxAge: INVESTOR_SESSION_MAX_AGE_SECONDS,
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
   });
 }
 

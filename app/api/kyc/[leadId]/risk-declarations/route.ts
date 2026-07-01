@@ -85,7 +85,9 @@ export async function POST(
     await logAuditEvent({
       leadId,
       eventType: 'kyc_risk_declarations_submitted',
-      metadata: payload,
+      metadata: {
+        field_count: KYC_RISK_DECLARATION_FIELDS.length,
+      },
     });
 
     return NextResponse.json({ success: true });

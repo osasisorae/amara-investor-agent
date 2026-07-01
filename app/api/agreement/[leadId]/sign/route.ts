@@ -43,6 +43,7 @@ export async function POST(
     const { leadId } = params;
     const session = await verifyInvestorSession(request, leadId);
     const ipAddress = getClientIpAddress(request);
+    const rateLimitIpAddress = ipAddress || 'unknown';
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -51,7 +52,7 @@ export async function POST(
     const verifyLimit = consumeSlidingWindowRateLimit({
       key: buildOtpRateLimitKey({
         scope: 'agreement-otp-verify',
-        ipAddress,
+        ipAddress: rateLimitIpAddress,
         identifier: leadId,
       }),
       maxAttempts: AGREEMENT_OTP_MAX_VERIFY_ATTEMPTS,
@@ -205,12 +206,8 @@ export async function POST(
       leadId,
       eventType: 'agreement_signed',
       metadata: {
-        typed_name: fullName,
         signed_at: signedAt,
-        otp_verified_at: signedAt,
         otp_issued_at: otpRecord.created_at,
-        slot_count: commitmentSelection.slotCount,
-        commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
         agreement_version: AGREEMENT_VERSION,
         document_hash: documentHash,
       },

@@ -16,6 +16,7 @@ import {
 import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { getInvestorSession } from '@/lib/investor-auth';
 import { getLeadCommitmentSelection } from '@/lib/payment';
+import { getClientIpAddress } from '@/lib/security/client-ip';
 
 export default async function AgreementPage({
   params,
@@ -44,6 +45,7 @@ export default async function AgreementPage({
   }
 
   const headerStore = headers();
+  const ipAddress = getClientIpAddress(headerStore);
   await markAgreementViewed(params.leadId);
   await logAuditEvent({
     leadId: params.leadId,
@@ -51,7 +53,7 @@ export default async function AgreementPage({
     metadata: {
       stage: lead.stage,
     },
-    ipAddress: headerStore.get('x-forwarded-for') || undefined,
+    ipAddress,
     userAgent: headerStore.get('user-agent') || undefined,
   });
 

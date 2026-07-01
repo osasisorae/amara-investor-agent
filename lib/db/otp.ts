@@ -43,7 +43,7 @@ export async function createOtpCode(params: {
   const code = generateOtpCode();
   const hashedCode = hashOtpCode(code);
   const now = Math.floor(Date.now() / 1000);
-  const ttlMinutes = params.ttlMinutes ?? 10;
+  const ttlMinutes = params.ttlMinutes ?? 5;
   const expiresAt = now + ttlMinutes * 60;
 
   await execute(

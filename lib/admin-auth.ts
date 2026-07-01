@@ -1,66 +1,22 @@
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify, SignJWT } from 'jose';
 import {
-  getRequiredEmailEnv,
-  getRequiredJwtSecretBytes,
-} from '@/lib/security/env';
+  ADMIN_SESSION_COOKIE,
+  SESSION_COOKIE_MAX_AGE_SECONDS,
+} from '@/lib/security/session-cookies';
+import {
+  signAdminSessionToken,
+  type AdminSession,
+  verifyAdminSessionToken,
+} from '@/lib/security/session-tokens';
 
-export const ADMIN_SESSION_COOKIE = 'admin_session';
-
-const ADMIN_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
-const ADMIN_JWT_SECRET = getRequiredJwtSecretBytes('ADMIN_JWT_SECRET');
-const CONFIGURED_ADMIN_EMAIL = getRequiredEmailEnv('ADMIN_EMAIL');
-
-export interface AdminSession {
-  email: string;
-  role: 'admin';
-}
-
-function getAdminJwtSecret(): Uint8Array {
-  return ADMIN_JWT_SECRET;
-}
-
-function getConfiguredAdminEmail(): string {
-  return CONFIGURED_ADMIN_EMAIL;
-}
-
-async function decodeAdminSession(
-  token: string
-): Promise<AdminSession | null> {
-  try {
-    const { payload } = await jwtVerify(token, getAdminJwtSecret(), {
-      algorithms: ['HS256'],
-    });
-
-    if (typeof payload.email !== 'string' || payload.role !== 'admin') {
-      return null;
-    }
-
-    if (payload.email.trim().toLowerCase() !== getConfiguredAdminEmail()) {
-      return null;
-    }
-
-    return {
-      email: payload.email,
-      role: 'admin',
-    };
-  } catch {
-    return null;
-  }
-}
+export { ADMIN_SESSION_COOKIE };
+export type { AdminSession };
 
 export async function signAdminSession(
   session: AdminSession
 ): Promise<string> {
-  return new SignJWT({
-    email: session.email,
-    role: session.role,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(getAdminJwtSecret());
+  return signAdminSessionToken(session);
 }
 
 export async function verifyAdminSession(
@@ -72,7 +28,7 @@ export async function verifyAdminSession(
     return null;
   }
 
-  return decodeAdminSession(token);
+  return verifyAdminSessionToken(token);
 }
 
 export async function getAdminSession(): Promise<AdminSession | null> {
@@ -82,7 +38,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  return decodeAdminSession(token);
+  return verifyAdminSessionToken(token);
 }
 
 export function setAdminSessionCookie(
@@ -96,7 +52,7 @@ export function setAdminSessionCookie(
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
-    maxAge: ADMIN_SESSION_MAX_AGE_SECONDS,
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
   });
 }
 

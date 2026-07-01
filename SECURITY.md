@@ -13,7 +13,7 @@
 | SEC-007 | High | Agent / Prompt Injection | RESOLVED |
 | SEC-008 | High | Agent / Prompt Injection | RESOLVED |
 | SEC-009 | High | Data Retention | RESOLVED |
-| SEC-010 | Medium | Authentication | OPEN |
+| SEC-010 | Medium | Authentication | RESOLVED |
 | SEC-011 | Medium | Authentication | RESOLVED |
 | SEC-012 | Medium | Input Validation | RESOLVED |
 | SEC-013 | Medium | Authorization | RESOLVED |
@@ -22,11 +22,11 @@
 | SEC-016 | Medium | Secrets & Environment | RESOLVED |
 | SEC-017 | Medium | Data Exposure | RESOLVED |
 | SEC-018 | Medium | Email & External API | RESOLVED |
-| SEC-019 | Medium | Email & External API | OPEN |
-| SEC-020 | Medium | Data Exposure | OPEN |
-| SEC-021 | Medium | Data Exposure | OPEN |
+| SEC-019 | Medium | Email & External API | RESOLVED |
+| SEC-020 | Medium | Data Exposure | RESOLVED |
+| SEC-021 | Medium | Data Exposure | RESOLVED |
 | SEC-022 | Low | Authentication | RESOLVED |
-| SEC-023 | Low | OTP Security | OPEN |
+| SEC-023 | Low | OTP Security | RESOLVED |
 | SEC-024 | Low | JWT Hardening | RESOLVED |
 | SEC-025 | Low | Secrets & Environment | RESOLVED |
 | SEC-026 | Low | Logging | RESOLVED |
@@ -163,9 +163,10 @@ Fix planned: Yes
 ID: SEC-010
 Severity: Medium
 Area: Authentication
-File: app/api/
-Status: OPEN
+File: middleware.ts
+Status: RESOLVED
 Description: Authentication enforcement is route by route with no middleware layer. This makes missing checks easy to introduce by omission, as shown by the current chat and agreement gaps.
+Resolved: Added a centralized middleware layer that rejects or redirects unauthenticated access across protected admin, investor, and rates routes before route handlers run, while route-level checks remain in place for defense in depth.
 Fix planned: Yes
 ---
 
@@ -262,8 +263,9 @@ ID: SEC-019
 Severity: Medium
 Area: Email & External API
 File: app/api/rates/route.ts (line 42)
-Status: OPEN
+Status: RESOLVED
 Description: The rates endpoint is unauthenticated and can be queried repeatedly with varying amounts to bypass the short cache. This can be abused to exhaust Grey API quota.
+Resolved: The rates endpoint now requires a verified investor session, applies per-session and per-IP throttling, and no longer advertises its responses as public cacheable content.
 Fix planned: Yes
 ---
 
@@ -272,8 +274,9 @@ ID: SEC-020
 Severity: Medium
 Area: Data Exposure
 File: app/api/kyc/[leadId]/risk-declarations/route.ts (line 85), app/api/agreement/[leadId]/sign/route.ts (line 124)
-Status: OPEN
+Status: RESOLVED
 Description: Full risk declaration answers and detailed agreement signing metadata are stored in audit_events. The audit trail therefore contains sensitive investor compliance and signing data.
+Resolved: Audit logging now stores only minimal submission and signing metadata, while the underlying KYC answers and agreement state continue to live in their purpose-built records.
 Fix planned: Yes
 ---
 
@@ -281,9 +284,10 @@ Fix planned: Yes
 ID: SEC-021
 Severity: Medium
 Area: Data Exposure
-File: app/api/chat/access/route.ts (line 87), app/api/agreement/[leadId]/sign/route.ts (line 137)
-Status: OPEN
+File: lib/security/client-ip.ts
+Status: RESOLVED
 Description: The application logs x-forwarded-for directly as the client IP without proxy trust validation. This makes the recorded IP address spoofable and unreliable as an audit field.
+Resolved: Client IP handling is now centralized behind validated proxy-aware parsing that prefers single-source platform headers, parses trusted forwarded forms, and drops ambiguous multi-hop x-forwarded-for values instead of logging them.
 Fix planned: Yes
 ---
 
@@ -303,8 +307,9 @@ ID: SEC-023
 Severity: Low
 Area: OTP Security
 File: lib/db/otp.ts (line 15)
-Status: OPEN
+Status: RESOLVED
 Description: OTP generation uses a cryptographically sound random source and a 10 minute expiry window. This is not a flaw by itself, but the current window should be reviewed in the context of missing rate limits.
+Resolved: OTP lifetimes now default to 5 minutes and the live chat-access and agreement-signing flows explicitly issue 5-minute codes alongside the earlier rate-limit and verification-attempt controls.
 Fix planned: Yes
 ---
 

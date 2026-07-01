@@ -4,6 +4,13 @@ import {
   type GreySupportedCurrency,
 } from '@/lib/grey/currency';
 import { getGreyRate } from '@/lib/grey/rates';
+import { verifyInvestorSession } from '@/lib/investor-auth';
+import { getClientIpAddress } from '@/lib/security/client-ip';
+import {
+  buildRateLimitKey,
+  consumeSlidingWindowRateLimit,
+  getRetryAfterHeaders,
+} from '@/lib/security/rate-limit';
 
 interface RateResponsePayload {
   rate: number;
@@ -21,6 +28,8 @@ interface CachedRateEntry {
 }
 
 const RATE_CACHE_TTL_MS = 60_000;
+const RATE_REQUEST_WINDOW_SECONDS = 60;
+const RATE_REQUEST_MAX_ATTEMPTS = 30;
 const rateCache = new Map<string, CachedRateEntry>();
 const ALLOWED_RATE_CURRENCIES = new Set<GreySupportedCurrency>([
   'NGN',
@@ -35,11 +44,39 @@ const ALLOWED_RATE_CURRENCIES = new Set<GreySupportedCurrency>([
 
 function buildCacheHeaders() {
   return {
-    'Cache-Control': 'public, max-age=60, s-maxage=60',
+    'Cache-Control': 'private, max-age=60',
   };
 }
 
 export async function GET(request: NextRequest) {
+  const session = await verifyInvestorSession(request);
+
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const rateLimit = consumeSlidingWindowRateLimit({
+    key: buildRateLimitKey({
+      scope: 'grey-rates',
+      keyParts: [session.leadId, getClientIpAddress(request) || 'unknown'],
+    }),
+    maxAttempts: RATE_REQUEST_MAX_ATTEMPTS,
+    windowSeconds: RATE_REQUEST_WINDOW_SECONDS,
+  });
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many rate requests. Try again shortly.' },
+      {
+        status: 429,
+        headers: {
+          ...getRetryAfterHeaders(rateLimit.retryAfterSeconds),
+          'Cache-Control': 'private, no-store',
+        },
+      }
+    );
+  }
+
   const sourceCurrency = normalizeGreyCurrency(
     request.nextUrl.searchParams.get('source_currency')
   );

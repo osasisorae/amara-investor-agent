@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logAuditEvent } from '@/lib/db/audit';
 import { getLeadById, updateLeadStage } from '@/lib/db/leads';
 import { verifyAdminSession } from '@/lib/admin-auth';
+import { getClientIpAddress } from '@/lib/security/client-ip';
 
 // Stage ownership rule: only lib/agent/orchestrator.ts and the admin KYC/payment
 // endpoints may write leads.stage. This route owns payment confirmation changes.
@@ -11,6 +12,8 @@ export async function POST(
 ) {
   try {
     const session = await verifyAdminSession(request);
+    const ipAddress = getClientIpAddress(request);
+
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -38,7 +41,7 @@ export async function POST(
       metadata: {
         confirmed_by: confirmedBy,
       },
-      ipAddress: request.headers.get('x-forwarded-for') || undefined,
+      ipAddress,
       userAgent: request.headers.get('user-agent') || undefined,
     });
 

@@ -13,9 +13,9 @@ import { PAYMENT_DETAILS } from '@/lib/payment-details';
 import {
   getPaymentMethodLabel,
   isPaymentMethod,
-  type PaymentMethod,
 } from '@/lib/payment-methods';
 import { verifyInvestorSession } from '@/lib/investor-auth';
+import { getClientIpAddress } from '@/lib/security/client-ip';
 
 export async function GET(
   request: NextRequest,
@@ -64,6 +64,7 @@ export async function POST(
 ) {
   try {
     const { leadId } = params;
+    const ipAddress = getClientIpAddress(request);
 
     if (!(await verifyInvestorSession(request, leadId))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -133,7 +134,7 @@ export async function POST(
         commitment_amount_ngn: commitmentSelection.commitmentAmountNgn,
         slot_count: commitmentSelection.slotCount,
       },
-      ipAddress: request.headers.get('x-forwarded-for') || undefined,
+      ipAddress,
       userAgent: request.headers.get('user-agent') || undefined,
     });
 
