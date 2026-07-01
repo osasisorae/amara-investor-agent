@@ -160,8 +160,9 @@ See `.env.example` for all required variables:
 ### Authentication
 - `ADMIN_EMAIL` - Admin dashboard login email
 - `ADMIN_PASSWORD` - Admin dashboard password
-- `ADMIN_JWT_SECRET` - JWT signing secret for admin session cookies
-- `INVESTOR_JWT_SECRET` - Optional dedicated JWT signing secret for investor session cookies
+- `ADMIN_JWT_SECRET` - JWT signing secret for admin session cookies (use at least 32 random characters)
+- `INVESTOR_JWT_SECRET` - Dedicated JWT signing secret for investor session cookies (use a different 32+ character secret)
+- `ADMIN_ALERT_EMAIL` - Required destination for compliance and operational security alerts
 
 ### App Configuration
 - `NEXT_PUBLIC_APP_URL` - Your app URL (http://localhost:3000 for dev)

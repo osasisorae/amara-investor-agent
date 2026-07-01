@@ -20,16 +20,38 @@ import { getR2ConfigStatus, uploadFile } from '@/lib/storage/r2';
 import { verifyInvestorSession } from '@/lib/investor-auth';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'pdf']);
+const ALLOWED_EXTENSIONS = new Set(['jpg', 'png', 'pdf']);
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'application/pdf',
 ]);
-function getFileExtension(file: File): string | null {
+
+type AllowedFileExtension = 'jpg' | 'png' | 'pdf';
+
+const JPEG_MAGIC_BYTES = Buffer.from([0xff, 0xd8, 0xff]);
+const PNG_MAGIC_BYTES = Buffer.from([
+  0x89,
+  0x50,
+  0x4e,
+  0x47,
+  0x0d,
+  0x0a,
+  0x1a,
+  0x0a,
+]);
+const PDF_MAGIC_BYTES = Buffer.from('%PDF-');
+
+function getFileExtension(file: File): AllowedFileExtension | null {
   const extensionFromName = file.name.split('.').pop()?.toLowerCase();
-  if (extensionFromName && ALLOWED_EXTENSIONS.has(extensionFromName)) {
-    return extensionFromName;
+  const normalizedExtension =
+    extensionFromName === 'jpeg' ? 'jpg' : extensionFromName;
+
+  if (
+    normalizedExtension &&
+    ALLOWED_EXTENSIONS.has(normalizedExtension)
+  ) {
+    return normalizedExtension as AllowedFileExtension;
   }
 
   switch (file.type) {
@@ -44,10 +66,9 @@ function getFileExtension(file: File): string | null {
   }
 }
 
-function getContentType(extension: string): string {
+function getContentType(extension: AllowedFileExtension): string {
   switch (extension) {
     case 'jpg':
-    case 'jpeg':
       return 'image/jpeg';
     case 'png':
       return 'image/png';
@@ -55,6 +76,54 @@ function getContentType(extension: string): string {
       return 'application/pdf';
     default:
       return 'application/octet-stream';
+  }
+}
+
+function detectFileSignature(buffer: Buffer): AllowedFileExtension | null {
+  if (buffer.length >= JPEG_MAGIC_BYTES.length) {
+    const jpegHeader = buffer.subarray(0, JPEG_MAGIC_BYTES.length);
+
+    if (jpegHeader.equals(JPEG_MAGIC_BYTES)) {
+      return 'jpg';
+    }
+  }
+
+  if (buffer.length >= PNG_MAGIC_BYTES.length) {
+    const pngHeader = buffer.subarray(0, PNG_MAGIC_BYTES.length);
+
+    if (pngHeader.equals(PNG_MAGIC_BYTES)) {
+      return 'png';
+    }
+  }
+
+  if (buffer.length >= PDF_MAGIC_BYTES.length) {
+    const pdfHeader = buffer.subarray(0, PDF_MAGIC_BYTES.length);
+
+    if (pdfHeader.equals(PDF_MAGIC_BYTES)) {
+      return 'pdf';
+    }
+  }
+
+  return null;
+}
+
+function isMimeTypeCompatible(
+  fileType: AllowedFileExtension,
+  mimeType: string
+): boolean {
+  if (!mimeType) {
+    return true;
+  }
+
+  switch (fileType) {
+    case 'jpg':
+      return mimeType === 'image/jpeg';
+    case 'png':
+      return mimeType === 'image/png';
+    case 'pdf':
+      return mimeType === 'application/pdf';
+    default:
+      return false;
   }
 }
 
@@ -81,36 +150,28 @@ export async function POST(
   { params }: { params: { leadId: string } }
 ) {
   const { leadId } = params;
-  
-  try {
-    console.log('[KYC Upload] Starting upload for lead:', leadId);
 
+  try {
     if (!(await verifyInvestorSession(request, leadId))) {
-      console.error('[KYC Upload] Unauthorized upload attempt for lead:', leadId);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const r2Config = getR2ConfigStatus();
     if (r2Config.missing.length > 0) {
-      console.error('[KYC Upload] Missing R2 configuration:', r2Config.missing);
+      console.error('[KYC Upload] Document storage is unavailable.');
       return NextResponse.json(
-        {
-          error: 'Document storage is not configured correctly.',
-          details: `Missing: ${r2Config.missing.join(', ')}`,
-        },
-        { status: 500 }
+        { error: 'Document upload is temporarily unavailable.' },
+        { status: 503 }
       );
     }
-    
+
     const lead = await getLeadById(leadId);
 
     if (!lead) {
-      console.log('[KYC Upload] Lead not found:', leadId);
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
     if (lead.stage !== 'kyc_intake') {
-      console.log('[KYC Upload] Invalid stage:', lead.stage);
       return NextResponse.json(
         { error: 'Lead is not in KYC intake stage' },
         { status: 400 }
@@ -119,7 +180,6 @@ export async function POST(
 
     const hasConsent = await hasAuditEventForLead(leadId, 'kyc_consent_given');
     if (!hasConsent) {
-      console.log('[KYC Upload] No consent found for lead:', leadId);
       return NextResponse.json(
         { error: 'Consent must be recorded before document upload' },
         { status: 400 }
@@ -135,10 +195,7 @@ export async function POST(
         : ''
     );
 
-    console.log('[KYC Upload] docType:', docType, 'selectedDocumentType:', selectedDocumentType);
-
     if (!(fileEntry instanceof File) || !docType) {
-      console.log('[KYC Upload] Invalid file or docType');
       return NextResponse.json(
         { error: 'File and valid document type are required' },
         { status: 400 }
@@ -146,7 +203,6 @@ export async function POST(
     }
 
     if (docType.startsWith('document_') && !selectedDocumentType) {
-      console.log('[KYC Upload] Missing document type selection');
       return NextResponse.json(
         { error: 'A government ID type must be selected first' },
         { status: 400 }
@@ -182,21 +238,27 @@ export async function POST(
     }
 
     if (fileEntry.size > MAX_FILE_SIZE_BYTES) {
-      console.log('[KYC Upload] File too large:', fileEntry.size);
       return NextResponse.json(
         { error: 'Files must be 5MB or smaller' },
         { status: 400 }
       );
     }
 
+    const buffer = Buffer.from(await fileEntry.arrayBuffer());
     const extension = getFileExtension(fileEntry);
+    const detectedFileType = detectFileSignature(buffer);
     if (
       !extension ||
-      (fileEntry.type && !ALLOWED_MIME_TYPES.has(fileEntry.type))
+      !detectedFileType ||
+      extension !== detectedFileType ||
+      (fileEntry.type && !ALLOWED_MIME_TYPES.has(fileEntry.type)) ||
+      !isMimeTypeCompatible(detectedFileType, fileEntry.type)
     ) {
-      console.log('[KYC Upload] Invalid file type:', fileEntry.type, extension);
       return NextResponse.json(
-        { error: 'Only JPG, JPEG, PNG, and PDF files are allowed' },
+        {
+          error:
+            'Only valid JPG, PNG, and PDF files with matching file signatures are allowed',
+        },
         { status: 400 }
       );
     }
@@ -208,19 +270,10 @@ export async function POST(
         ? buildStoredKycDocType(selectedDocumentType, docType)
         : docType;
     const timestamp = Date.now();
-    const filename = `${leadId}-${storedDocType}-${timestamp}.${extension}`;
-    const buffer = Buffer.from(await fileEntry.arrayBuffer());
-    const contentType = fileEntry.type || getContentType(extension);
-
-    console.log('[KYC Upload] Uploading to R2:', filename);
-    console.log('[KYC Upload] R2 Config check - Endpoint:', process.env.R2_ENDPOINT ? 'SET' : 'MISSING');
-    console.log('[KYC Upload] R2 Config check - Access Key:', process.env.R2_ACCESS_KEY_ID ? 'SET' : 'MISSING');
-    console.log('[KYC Upload] R2 Config check - Secret:', process.env.R2_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
-    console.log('[KYC Upload] R2 Config check - Account ID:', process.env.R2_ACCOUNT_ID ? 'SET' : 'MISSING');
-    console.log('[KYC Upload] R2 Config check - Bucket:', process.env.R2_BUCKET_NAME ? 'SET' : 'MISSING');
+    const filename = `${leadId}-${storedDocType}-${timestamp}.${detectedFileType}`;
+    const contentType = getContentType(detectedFileType);
 
     const storedFilename = await uploadFile(buffer, filename, contentType);
-    console.log('[KYC Upload] Successfully uploaded:', storedFilename);
 
     const document = await saveKycDocument({
       leadId,
@@ -238,7 +291,6 @@ export async function POST(
       },
     });
 
-    console.log('[KYC Upload] Complete for lead:', leadId);
     return NextResponse.json({
       filename: storedFilename,
       document: {
@@ -249,15 +301,13 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error('[KYC Upload] Error uploading KYC document for lead:', leadId);
-    console.error('[KYC Upload] Error details:', error);
-    console.error('[KYC Upload] Error stack:', error instanceof Error ? error.stack : 'No stack');
-    
+    console.error(
+      '[KYC Upload] Upload failed.',
+      error instanceof Error ? { name: error.name } : undefined
+    );
+
     return NextResponse.json(
-      { 
-        error: 'Failed to upload document',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to upload document' },
       { status: 500 }
     );
   }

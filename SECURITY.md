@@ -14,22 +14,22 @@
 | SEC-008 | High | Agent / Prompt Injection | RESOLVED |
 | SEC-009 | High | Data Retention | RESOLVED |
 | SEC-010 | Medium | Authentication | OPEN |
-| SEC-011 | Medium | Authentication | OPEN |
-| SEC-012 | Medium | Input Validation | OPEN |
+| SEC-011 | Medium | Authentication | RESOLVED |
+| SEC-012 | Medium | Input Validation | RESOLVED |
 | SEC-013 | Medium | Authorization | RESOLVED |
-| SEC-014 | Medium | JWT Hardening | OPEN |
-| SEC-015 | Medium | Secrets & Environment | OPEN |
-| SEC-016 | Medium | Secrets & Environment | OPEN |
-| SEC-017 | Medium | Data Exposure | OPEN |
+| SEC-014 | Medium | JWT Hardening | RESOLVED |
+| SEC-015 | Medium | Secrets & Environment | RESOLVED |
+| SEC-016 | Medium | Secrets & Environment | RESOLVED |
+| SEC-017 | Medium | Data Exposure | RESOLVED |
 | SEC-018 | Medium | Email & External API | RESOLVED |
 | SEC-019 | Medium | Email & External API | OPEN |
 | SEC-020 | Medium | Data Exposure | OPEN |
 | SEC-021 | Medium | Data Exposure | OPEN |
-| SEC-022 | Low | Authentication | OPEN |
+| SEC-022 | Low | Authentication | RESOLVED |
 | SEC-023 | Low | OTP Security | OPEN |
-| SEC-024 | Low | JWT Hardening | OPEN |
-| SEC-025 | Low | Secrets & Environment | OPEN |
-| SEC-026 | Low | Logging | OPEN |
+| SEC-024 | Low | JWT Hardening | RESOLVED |
+| SEC-025 | Low | Secrets & Environment | RESOLVED |
+| SEC-026 | Low | Logging | RESOLVED |
 
 ## Vulnerability Disclosure Policy
 
@@ -174,8 +174,9 @@ ID: SEC-011
 Severity: Medium
 Area: Authentication
 File: app/api/admin/auth/route.ts (line 24)
-Status: OPEN
+Status: RESOLVED
 Description: Admin login has no rate limiting, lockout, or login attempt controls. Repeated credential guessing is not throttled.
+Resolved: Admin login now applies server-side sliding-window throttles per IP and per IP plus email combination before a session is issued.
 Fix planned: Yes
 ---
 
@@ -184,8 +185,9 @@ ID: SEC-012
 Severity: Medium
 Area: Input Validation
 File: app/api/kyc/[leadId]/upload/route.ts (line 192)
-Status: OPEN
+Status: RESOLVED
 Description: KYC upload validation relies on file extension and MIME type only. There is no magic byte or file signature inspection to confirm the uploaded content is actually an allowed document type.
+Resolved: KYC uploads now validate JPEG, PNG, and PDF magic bytes and reject files whose binary signature does not match the claimed file type.
 Fix planned: Yes
 ---
 
@@ -205,8 +207,9 @@ ID: SEC-014
 Severity: Medium
 Area: JWT Hardening
 File: lib/investor-auth.ts (line 15)
-Status: OPEN
+Status: RESOLVED
 Description: Investor JWT signing falls back to the admin JWT secret when INVESTOR_JWT_SECRET is not set. This collapses the admin and investor trust domains onto one shared secret.
+Resolved: Investor session signing and verification now require a dedicated INVESTOR_JWT_SECRET with no fallback to the admin signing secret.
 Fix planned: Yes
 ---
 
@@ -215,8 +218,9 @@ ID: SEC-015
 Severity: Medium
 Area: Secrets & Environment
 File: lib/admin-auth.ts (line 14), lib/investor-auth.ts (line 15)
-Status: OPEN
+Status: RESOLVED
 Description: JWT secrets are not validated at startup. Missing values only fail at first use, which increases the risk of misconfigured deployments reaching runtime.
+Resolved: Security-sensitive environment variables are now validated during server startup so missing JWT and related authentication configuration fails closed before the app serves requests.
 Fix planned: Yes
 ---
 
@@ -225,8 +229,9 @@ ID: SEC-016
 Severity: Medium
 Area: Secrets & Environment
 File: lib/agent/orchestrator.ts (line 83), lib/kyc/submission.ts (line 27)
-Status: OPEN
+Status: RESOLVED
 Description: Sensitive operational email notifications fall back to a hardcoded personal address if the admin alert env var is missing. That creates a risk of misrouted investor or compliance communications.
+Resolved: ADMIN_ALERT_EMAIL is now required and validated as an email address before operational notifications can be sent.
 Fix planned: Yes
 ---
 
@@ -235,8 +240,9 @@ ID: SEC-017
 Severity: Medium
 Area: Data Exposure
 File: app/api/kyc/[leadId]/upload/route.ts (line 93), app/api/kyc/[leadId]/upload/route.ts (line 256)
-Status: OPEN
+Status: RESOLVED
 Description: Upload error responses expose internal failure details to investors, including missing R2 environment keys and raw error messages. This leaks operational configuration information.
+Resolved: KYC upload responses now return generic storage and failure messages without exposing missing environment keys or raw internal errors to investors.
 Fix planned: Yes
 ---
 
@@ -286,8 +292,9 @@ ID: SEC-022
 Severity: Low
 Area: Authentication
 File: app/api/admin/auth/route.ts (line 44)
-Status: OPEN
+Status: RESOLVED
 Description: Admin authentication compares supplied credentials directly against configured values with no throttling. This is a weaker form of the broader login hardening issue.
+Resolved: Admin credential verification now runs behind rate limits and uses constant-time hash comparison instead of direct string equality.
 Fix planned: Yes
 ---
 
@@ -306,8 +313,9 @@ ID: SEC-024
 Severity: Low
 Area: JWT Hardening
 File: lib/admin-auth.ts (line 14), lib/investor-auth.ts (line 15)
-Status: OPEN
+Status: RESOLVED
 Description: JWT secret strength is not validated at startup. Short or weak secrets would still be accepted if provided in the environment.
+Resolved: Admin and investor JWT secrets now enforce a minimum length during startup validation before any signing or verification code runs.
 Fix planned: Yes
 ---
 
@@ -316,8 +324,9 @@ ID: SEC-025
 Severity: Low
 Area: Secrets & Environment
 File: lib/grey/rates.ts (line 79)
-Status: OPEN
+Status: RESOLVED
 Description: Grey rates integration fails open by returning null when the API key is missing. The application degrades gracefully, but the missing secret can go unnoticed until runtime.
+Resolved: GREY_API_KEY is now required during server startup and the Grey rates integration no longer degrades silently when the API key is missing.
 Fix planned: Yes
 ---
 
@@ -326,7 +335,8 @@ ID: SEC-026
 Severity: Low
 Area: Logging
 File: app/api/kyc/[leadId]/upload/route.ts (line 86), app/api/kyc/[leadId]/upload/route.ts (line 252), lib/storage/r2.ts (line 70)
-Status: OPEN
+Status: RESOLVED
 Description: Server logs in the KYC upload path include lead IDs, filenames, and full error stacks. These logs increase exposure of sensitive identifiers and operational details.
+Resolved: KYC upload and R2 storage logs now avoid lead IDs, filenames, and raw error stacks while retaining high-level failure signals.
 Fix planned: Yes
 ---

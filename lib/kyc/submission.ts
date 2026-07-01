@@ -23,9 +23,9 @@ import {
   isKycSourceOfFundsType,
   type KycRiskLevel,
 } from '@/lib/kyc/requirements';
+import { getRequiredEmailEnv } from '@/lib/security/env';
 
-const ADMIN_ALERT_EMAIL =
-  process.env.ADMIN_ALERT_EMAIL || 'osasisorae@gmail.com';
+const ADMIN_ALERT_EMAIL = getRequiredEmailEnv('ADMIN_ALERT_EMAIL');
 
 export interface KycSubmissionValidationResult {
   valid: boolean;

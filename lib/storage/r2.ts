@@ -66,27 +66,18 @@ export async function uploadFile(
   filename: string,
   contentType: string
 ): Promise<string> {
-  try {
-    console.log('[R2] Attempting to upload file:', filename);
-    const client = createR2Client();
-    console.log('[R2] Client created successfully');
+  const client = createR2Client();
 
-    await client.send(
-      new PutObjectCommand({
-        Bucket: getBucketName(),
-        Key: filename,
-        Body: file,
-        ContentType: contentType,
-      })
-    );
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: filename,
+      Body: file,
+      ContentType: contentType,
+    })
+  );
 
-    console.log('[R2] File uploaded successfully:', filename);
-    return filename;
-  } catch (error) {
-    console.error('[R2] Upload failed for file:', filename);
-    console.error('[R2] Error details:', error);
-    throw error;
-  }
+  return filename;
 }
 
 export async function getSignedDocumentUrl(filename: string): Promise<string> {

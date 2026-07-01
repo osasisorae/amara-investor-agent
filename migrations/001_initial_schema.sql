@@ -134,13 +134,5 @@ CREATE TABLE IF NOT EXISTS admin_users (
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Insert default admin user (password will be hashed by app)
--- Password: FutureXPartner!2026
-INSERT OR IGNORE INTO admin_users (id, email, password_hash, full_name, role) 
-VALUES (
-  'admin-default',
-  'osasisorae@gmail.com',
-  '$2a$10$placeholder', -- Will be replaced by actual hash in app initialization
-  'Osas Isorae',
-  'admin'
-);
+-- Runtime admin authentication is environment-based. This legacy table is
+-- retained for compatibility and should be populated explicitly if adopted.

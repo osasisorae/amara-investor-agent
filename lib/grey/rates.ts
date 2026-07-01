@@ -2,6 +2,9 @@ import {
   normalizeGreyCurrency,
   type GreySupportedCurrency,
 } from './currency';
+import { getRequiredEnvValue } from '@/lib/security/env';
+
+const GREY_API_KEY = getRequiredEnvValue('GREY_API_KEY');
 
 interface GreyRateArgs {
   sourceAmount: number;
@@ -76,7 +79,6 @@ export async function getGreyRate({
   sourceCurrency,
   destinationCurrency,
 }: GreyRateArgs): Promise<GreyRateQuote | null> {
-  const apiKey = process.env.GREY_API_KEY?.trim();
   const normalizedSource = normalizeCurrencyOrNull(
     sourceCurrency,
     'source'
@@ -85,11 +87,6 @@ export async function getGreyRate({
     destinationCurrency,
     'destination'
   );
-
-  if (!apiKey) {
-    console.error('[Grey Rates] GREY_API_KEY is not configured.');
-    return null;
-  }
 
   if (
     !normalizedSource ||
@@ -107,7 +104,7 @@ export async function getGreyRate({
     const response = await fetch('https://api.grey.co/v1/rates', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${GREY_API_KEY}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },

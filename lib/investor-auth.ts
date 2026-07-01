@@ -1,10 +1,12 @@
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
+import { getRequiredJwtSecretBytes } from '@/lib/security/env';
 
 export const INVESTOR_SESSION_COOKIE = 'investor_session';
 
 const INVESTOR_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const INVESTOR_JWT_SECRET = getRequiredJwtSecretBytes('INVESTOR_JWT_SECRET');
 
 export interface InvestorSession {
   leadId: string;
@@ -13,15 +15,7 @@ export interface InvestorSession {
 }
 
 function getInvestorJwtSecret(): Uint8Array {
-  const secret =
-    process.env.INVESTOR_JWT_SECRET?.trim() ||
-    process.env.ADMIN_JWT_SECRET?.trim();
-
-  if (!secret) {
-    throw new Error('INVESTOR_JWT_SECRET or ADMIN_JWT_SECRET is not configured');
-  }
-
-  return new TextEncoder().encode(secret);
+  return INVESTOR_JWT_SECRET;
 }
 
 async function decodeInvestorSession(

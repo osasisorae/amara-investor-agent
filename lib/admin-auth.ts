@@ -1,10 +1,16 @@
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
+import {
+  getRequiredEmailEnv,
+  getRequiredJwtSecretBytes,
+} from '@/lib/security/env';
 
 export const ADMIN_SESSION_COOKIE = 'admin_session';
 
 const ADMIN_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const ADMIN_JWT_SECRET = getRequiredJwtSecretBytes('ADMIN_JWT_SECRET');
+const CONFIGURED_ADMIN_EMAIL = getRequiredEmailEnv('ADMIN_EMAIL');
 
 export interface AdminSession {
   email: string;
@@ -12,18 +18,11 @@ export interface AdminSession {
 }
 
 function getAdminJwtSecret(): Uint8Array {
-  const secret = process.env.ADMIN_JWT_SECRET?.trim();
-
-  if (!secret) {
-    throw new Error('ADMIN_JWT_SECRET is not configured');
-  }
-
-  return new TextEncoder().encode(secret);
+  return ADMIN_JWT_SECRET;
 }
 
-function getConfiguredAdminEmail(): string | null {
-  const email = process.env.ADMIN_EMAIL?.trim();
-  return email ? email.toLowerCase() : null;
+function getConfiguredAdminEmail(): string {
+  return CONFIGURED_ADMIN_EMAIL;
 }
 
 async function decodeAdminSession(
@@ -38,11 +37,7 @@ async function decodeAdminSession(
       return null;
     }
 
-    const configuredAdminEmail = getConfiguredAdminEmail();
-    if (
-      configuredAdminEmail &&
-      payload.email.trim().toLowerCase() !== configuredAdminEmail
-    ) {
+    if (payload.email.trim().toLowerCase() !== getConfiguredAdminEmail()) {
       return null;
     }
 

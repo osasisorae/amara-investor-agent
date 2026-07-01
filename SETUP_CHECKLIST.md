@@ -10,14 +10,18 @@
 
 ## 🔴 Critical - Complete Before Building
 
-### 1. Generate NextAuth Secret
-**Why:** Required for secure session management in the admin dashboard
+### 1. Generate Session Secrets
+**Why:** Required for secure admin and investor session signing
 
 ```bash
 openssl rand -base64 32
+openssl rand -base64 32
 ```
 
-Add the output to `.env` as `NEXTAUTH_SECRET=`
+Add the outputs to `.env` as:
+- `ADMIN_JWT_SECRET=`
+- `INVESTOR_JWT_SECRET=`
+- `ADMIN_ALERT_EMAIL=`
 
 ---
 
@@ -27,7 +31,7 @@ Add the output to `.env` as `NEXTAUTH_SECRET=`
 **Option A (Fastest for hackathon):**
 Use Resend's test domain: `onboarding@resend.dev`
 - Already added to `.env` as `RESEND_FROM_EMAIL`
-- Emails will only deliver to your verified email address (osasisorae@gmail.com)
+- Emails will only deliver to your verified email address
 
 **Option B (Production-ready):**
 Verify your own domain in Resend dashboard
@@ -37,11 +41,11 @@ Verify your own domain in Resend dashboard
 **Test now:**
 ```bash
 curl -X POST https://api.resend.com/emails \
-  -H "Authorization: Bearer re_8tEYjXZa_QG49kunGaLZYnT1zct5JYJkB" \
+  -H "Authorization: Bearer re_your_resend_api_key" \
   -H "Content-Type: application/json" \
   -d '{
     "from": "onboarding@resend.dev",
-    "to": "osasisorae@gmail.com",
+    "to": "ops@example.com",
     "subject": "FutureX Test",
     "text": "Email delivery working!"
   }'
@@ -140,7 +144,7 @@ From your earlier questions, we need to decide:
 ## Ready to Start Building?
 
 Once you:
-1. Generate and add `NEXTAUTH_SECRET`
+1. Generate and add `ADMIN_JWT_SECRET`, `INVESTOR_JWT_SECRET`, and `ADMIN_ALERT_EMAIL`
 2. Confirm Resend is working (run curl test above)
 3. Decide on knowledge base approach (Option 1 or 2)
 4. Confirm file storage choice (Vercel Blob recommended)

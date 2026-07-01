@@ -148,10 +148,13 @@ RESEND_FROM_EMAIL=amara@investfuturex.com
 
 BLOB_READ_WRITE_TOKEN=vercel_blob_...
 
-NEXTAUTH_SECRET=your-secret-here
-NEXTAUTH_URL=https://your-app.vercel.app
-ADMIN_EMAIL=osasisorae@gmail.com
+ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=your-password
+ADMIN_JWT_SECRET=replace_with_at_least_32_random_characters
+INVESTOR_JWT_SECRET=replace_with_a_different_32_character_secret
+ADMIN_ALERT_EMAIL=compliance@investfuturex.com
+
+GREY_API_KEY=grey_live_...
 
 OTP_PROVIDER=resend
 OTP_EXPIRES_IN_MINUTES=15
@@ -309,5 +312,5 @@ Before going live:
 ## Support
 
 For issues during deployment:
-- Email: osasisorae@gmail.com
+- Email: amara@investfuturex.com
 - GitHub Issues: [github.com/osasisorae/amara-investor-agent/issues](https://github.com/osasisorae/amara-investor-agent/issues)

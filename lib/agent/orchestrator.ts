@@ -86,9 +86,9 @@ import {
 } from '@/lib/grey/currency';
 import { getGreyRate } from '@/lib/grey/rates';
 import { getPaymentReference } from '@/lib/payment';
+import { getRequiredEmailEnv } from '@/lib/security/env';
 
-const ADMIN_ALERT_EMAIL =
-  process.env.ADMIN_ALERT_EMAIL || 'osasisorae@gmail.com';
+const ADMIN_ALERT_EMAIL = getRequiredEmailEnv('ADMIN_ALERT_EMAIL');
 
 const LEAD_STAGES: LeadStage[] = [
   'outreach_sent',

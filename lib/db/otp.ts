@@ -1,6 +1,9 @@
 import { createHmac, randomInt } from 'node:crypto';
 import { nanoid } from 'nanoid';
+import { getRequiredJwtSecret } from '@/lib/security/env';
 import { execute, queryOne } from './client';
+
+const OTP_HASH_SECRET = getRequiredJwtSecret('INVESTOR_JWT_SECRET');
 
 export interface OtpCode {
   id: string;
@@ -22,15 +25,7 @@ function generateOtpCode(): string {
 }
 
 function getOtpHashSecret(): string {
-  const secret =
-    process.env.INVESTOR_JWT_SECRET?.trim() ||
-    process.env.ADMIN_JWT_SECRET?.trim();
-
-  if (!secret) {
-    throw new Error('INVESTOR_JWT_SECRET or ADMIN_JWT_SECRET is not configured');
-  }
-
-  return secret;
+  return OTP_HASH_SECRET;
 }
 
 function hashOtpCode(code: string): string {

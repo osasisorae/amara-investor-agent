@@ -1,11 +1,22 @@
-import type { Metadata } from "next";
+import type { Metadata } from 'next';
 import { FeedbackProvider } from '@/components/feedback-provider';
-import "./globals.css";
+import { validateSecurityEnvironment } from '@/lib/security/env';
+import './globals.css';
+
+validateSecurityEnvironment();
 
 export const metadata: Metadata = {
-  title: "Amara | FutureX Investor Onboarding",
-  description: "AI-powered investor onboarding for FutureX real estate syndication. Guiding Nigerian diaspora investors through qualification, due diligence, and KYC.",
-  keywords: ["real estate", "investment", "nigeria", "diaspora", "futurex", "amara"],
+  title: 'Amara | FutureX Investor Onboarding',
+  description:
+    'AI-powered investor onboarding for FutureX real estate syndication. Guiding Nigerian diaspora investors through qualification, due diligence, and KYC.',
+  keywords: [
+    'real estate',
+    'investment',
+    'nigeria',
+    'diaspora',
+    'futurex',
+    'amara',
+  ],
 };
 
 export default function RootLayout({
