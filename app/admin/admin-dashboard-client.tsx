@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { ChatReviewPanel } from '@/components/admin/ChatReviewPanel';
 import { KycReviewPanel } from '@/components/admin/KycReviewPanel';
 import { SupportReviewPanel } from '@/components/admin/SupportReviewPanel';
 import { useFeedback } from '@/components/feedback-provider';
@@ -52,6 +53,9 @@ export default function AdminDashboardClient({
   const [adding, setAdding] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [expandedKycLeadId, setExpandedKycLeadId] = useState<string | null>(
+    null
+  );
+  const [expandedChatLeadId, setExpandedChatLeadId] = useState<string | null>(
     null
   );
   const [expandedSupportLeadId, setExpandedSupportLeadId] = useState<
@@ -589,12 +593,19 @@ export default function AdminDashboardClient({
                           View Agreement
                         </Link>
                       ) : null}
-                      <Link
-                        href={`/chat/${lead.id}`}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedChatLeadId((current) =>
+                            current === lead.id ? null : lead.id
+                          )
+                        }
                         className="rounded bg-futurex-gold px-4 py-2 text-sm text-futurex-bg hover:opacity-90"
                       >
-                        View Chat
-                      </Link>
+                        {expandedChatLeadId === lead.id
+                          ? 'Hide Chat Review'
+                          : 'Review Chat'}
+                      </button>
                       <button
                         onClick={() => deleteLead(lead.id, lead.email)}
                         className="rounded bg-gray-600 px-4 py-2 text-sm text-white hover:bg-gray-700"
@@ -616,6 +627,12 @@ export default function AdminDashboardClient({
                       }}
                     />
                   ) : null}
+
+                  <ChatReviewPanel
+                    leadId={lead.id}
+                    isOpen={expandedChatLeadId === lead.id}
+                    onUnauthorized={handleUnauthorized}
+                  />
 
                   {hasOpenSupportRequest(lead) ? (
                     <SupportReviewPanel

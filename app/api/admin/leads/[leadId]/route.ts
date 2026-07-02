@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { logAuditEvent } from '@/lib/db/audit';
+import { getAuditTrail, logAuditEvent } from '@/lib/db/audit';
+import {
+  buildAdminChatSummary,
+  mapAdminReviewMessage,
+} from '@/lib/admin/chat-review';
 import { query } from '@/lib/db/client';
 import { getLeadById, deleteLeadCascade } from '@/lib/db/leads';
-import { getRecentMessagesByLeadId, saveMessage } from '@/lib/db/messages';
+import { getMessagesByLeadId, saveMessage } from '@/lib/db/messages';
+import { getLatestQualificationAnswerMap } from '@/lib/db/qualification';
 import { verifyAdminSession } from '@/lib/admin-auth';
 
 interface AuditEventRow {
@@ -79,10 +84,27 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    const [reviewState, messages] = await Promise.all([
-      getHumanReviewState(leadId),
-      getRecentMessagesByLeadId(leadId, 25),
-    ]);
+    const [reviewState, transcriptMessages, auditEvents, latestAnswers] =
+      await Promise.all([
+        getHumanReviewState(leadId),
+        getMessagesByLeadId(leadId),
+        getAuditTrail(leadId),
+        getLatestQualificationAnswerMap(leadId),
+      ]);
+    const recentMessages = transcriptMessages.slice(-25);
+    const reviewReason =
+      reviewState.requestMetadata?.reason &&
+      typeof reviewState.requestMetadata.reason === 'string'
+        ? reviewState.requestMetadata.reason
+        : null;
+    const chatSummary = buildAdminChatSummary({
+      lead,
+      latestAnswers,
+      auditEvents,
+      messages: transcriptMessages,
+      reviewOpen: reviewState.open,
+      reviewReason,
+    });
 
     return NextResponse.json({
       lead: {
@@ -90,15 +112,11 @@ export async function GET(
         email: lead.email,
         fullName: lead.full_name || '',
         stage: lead.stage,
-        country: lead.country || '',
+        country: chatSummary.currentLocation || lead.country || '',
       },
       reviewRequest: {
         open: reviewState.open,
-        reason:
-          reviewState.requestMetadata?.reason &&
-          typeof reviewState.requestMetadata.reason === 'string'
-            ? reviewState.requestMetadata.reason
-            : null,
+        reason: reviewReason,
         requestedAt: reviewState.latestRequested?.created_at || null,
         resolvedAt: reviewState.latestResolved?.created_at || null,
         resolvedBy:
@@ -107,32 +125,9 @@ export async function GET(
             ? reviewState.resolvedMetadata.resolved_by
             : null,
       },
-      messages: messages.map((message) => {
-        const metadata = parseMetadata(message.metadata);
-        const isFuturexTeamMessage =
-          message.role === 'agent' &&
-          (metadata?.senderType === 'futurex_team' ||
-            /^FutureX team:\s*/i.test(message.content));
-
-        return {
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          createdAt: message.created_at,
-          senderType:
-            message.role === 'investor'
-              ? 'investor'
-              : isFuturexTeamMessage
-                ? 'futurex_team'
-                : 'amara',
-          senderLabel:
-            message.role === 'investor'
-              ? 'Investor'
-              : isFuturexTeamMessage
-                ? 'FutureX Team'
-                : 'Amara',
-        };
-      }),
+      chatSummary,
+      transcriptCount: transcriptMessages.length,
+      messages: recentMessages.map(mapAdminReviewMessage),
     });
   } catch (error) {
     console.error('Error fetching admin support review:', error);

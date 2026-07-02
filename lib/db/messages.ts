@@ -48,16 +48,11 @@ export async function getRecentMessagesByLeadId(
   leadId: string,
   limit = 10
 ): Promise<Message[]> {
-  const results = await query<Message>(
-    `SELECT *
-     FROM messages
-     WHERE lead_id = ?
-     ORDER BY created_at DESC
-     LIMIT ?`,
-    [leadId, limit]
-  );
+  const safeLimit =
+    Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 10;
+  const messages = await getMessagesByLeadId(leadId);
 
-  return [...results].reverse();
+  return messages.slice(-safeLimit);
 }
 
 export async function getConversationHistory(
