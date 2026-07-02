@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { AddInvestorButton } from '@/components/admin/AddInvestorButton';
+import { AdminShell } from '@/components/admin/AdminShell';
 import { ChatReviewPanel } from '@/components/admin/ChatReviewPanel';
 import { KycReviewPanel } from '@/components/admin/KycReviewPanel';
 import { SupportReviewPanel } from '@/components/admin/SupportReviewPanel';
@@ -36,22 +37,17 @@ interface Lead {
   };
 }
 
-interface AdminDashboardClientProps {
+interface AdminPipelineClientProps {
   adminEmail: string;
 }
 
-export default function AdminDashboardClient({
+export default function AdminPipelineClient({
   adminEmail,
-}: AdminDashboardClientProps) {
+}: AdminPipelineClientProps) {
   const router = useRouter();
   const { notify, confirm } = useFeedback();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [notes, setNotes] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [expandedKycLeadId, setExpandedKycLeadId] = useState<string | null>(
     null
   );
@@ -96,71 +92,6 @@ export default function AdminDashboardClient({
       console.error('Failed to fetch leads:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const logout = async () => {
-    setLoggingOut(true);
-
-    try {
-      await fetch('/api/admin/auth', {
-        method: 'DELETE',
-      });
-    } catch (error) {
-      console.error('Failed to log out cleanly:', error);
-    } finally {
-      redirectToLogin();
-      setLoggingOut(false);
-    }
-  };
-
-  const addOfferee = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setAdding(true);
-
-    try {
-      const response = await fetch('/api/admin/offeree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          fullName,
-          notes,
-          addedBy: adminEmail,
-        }),
-      });
-
-      if (handleUnauthorized(response)) {
-        return;
-      }
-
-      if (response.ok) {
-        setEmail('');
-        setFullName('');
-        setNotes('');
-        fetchLeads();
-        notify({
-          title: 'Offeree added',
-          message: 'Offeree added and outreach email sent.',
-          tone: 'success',
-        });
-      } else {
-        const error = await response.json();
-        notify({
-          title: 'Offeree not added',
-          message: error.error || 'Failed to add offeree.',
-          tone: 'error',
-        });
-      }
-    } catch (error) {
-      console.error('Failed to add offeree:', error);
-      notify({
-        title: 'Offeree not added',
-        message: 'Failed to add offeree.',
-        tone: 'error',
-      });
-    } finally {
-      setAdding(false);
     }
   };
 
@@ -305,41 +236,34 @@ export default function AdminDashboardClient({
   const hasOpenSupportRequest = (lead: Lead) =>
     Boolean(lead.opsSummary?.humanReviewOpen);
   const openSupportCount = leads.filter(hasOpenSupportRequest).length;
+  const paymentPendingCount = leads.filter(
+    (lead) => lead.stage === 'payment_pending'
+  ).length;
+  const pendingKycCount = leads.filter(
+    (lead) => lead.stage === 'pending_human_review'
+  ).length;
 
   return (
-    <div className="min-h-screen bg-futurex-bg">
-      <header className="border-b border-futurex-line">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <Link href="/">
-            <div className="rounded-xl bg-[#fffdf8] px-3 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-              <Image
-                src="/futurex-wordmark-email.png"
-                alt="FutureX"
-                width={132}
-                height={74}
-                className="h-7 w-auto"
-              />
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-sm text-futurex-gold">Admin Dashboard</div>
-              <div className="text-xs text-futurex-muted">{adminEmail}</div>
-            </div>
-            <button
-              type="button"
-              onClick={logout}
-              disabled={loggingOut}
-              className="rounded-lg border border-futurex-line px-4 py-2 text-sm text-futurex-ink transition hover:border-futurex-gold hover:text-futurex-gold disabled:opacity-50"
-            >
-              {loggingOut ? 'Logging out...' : 'Logout'}
-            </button>
+    <AdminShell
+      adminEmail={adminEmail}
+      activePage="pipeline"
+      title="Investor Pipeline"
+      description="Review every investor record end to end, handle manual checkpoints, and prepare the surface for upcoming stage and operator filters."
+      actions={
+        <>
+          <AddInvestorButton
+            adminEmail={adminEmail}
+            onUnauthorized={handleUnauthorized}
+            onAdded={() => {
+              void fetchLeads();
+            }}
+          />
+          <div className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-muted">
+            Filters landing here next
           </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-6 py-8">
+        </>
+      }
+    >
         {openSupportCount > 0 ? (
           <div className="mb-8 rounded-lg border border-amber-500/30 bg-amber-500/10 p-6">
             <div className="text-sm font-semibold text-amber-100">
@@ -353,68 +277,84 @@ export default function AdminDashboardClient({
           </div>
         ) : null}
 
-        <div className="mb-8 rounded-lg border border-futurex-line bg-futurex-surface p-6">
-          <h2 className="mb-4 text-2xl font-serif text-futurex-ink">
-            Add Investor to Offeree Register
-          </h2>
-          <form onSubmit={addOfferee} className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm text-futurex-muted">
-                Email Address *
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-                className="w-full rounded border border-futurex-line bg-futurex-surface2 px-4 py-2 text-futurex-ink outline-none focus:border-futurex-gold"
-                placeholder="investor@example.com"
-              />
+        <div className="mb-8 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-futurex-line bg-futurex-surface p-5">
+            <div className="text-xs uppercase tracking-[0.16em] text-futurex-muted">
+              Total investors
             </div>
-            <div>
-              <label className="mb-2 block text-sm text-futurex-muted">
-                Full Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                className="w-full rounded border border-futurex-line bg-futurex-surface2 px-4 py-2 text-futurex-ink outline-none focus:border-futurex-gold"
-                placeholder="John Doe"
-              />
+            <div className="mt-2 text-3xl font-semibold text-futurex-ink">
+              {leads.length}
             </div>
-            <div>
-              <label className="mb-2 block text-sm text-futurex-muted">
-                Notes (Optional)
-              </label>
-              <textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                className="w-full rounded border border-futurex-line bg-futurex-surface2 px-4 py-2 text-futurex-ink outline-none focus:border-futurex-gold"
-                rows={2}
-                placeholder="Source, referral details, etc."
-              />
+            <div className="mt-1 text-sm text-futurex-muted">
+              Every lead currently inside the admin pipeline.
             </div>
-            <button
-              type="submit"
-              disabled={adding}
-              className="rounded bg-futurex-gold px-6 py-2 font-semibold text-futurex-bg hover:opacity-90 disabled:opacity-50"
-            >
-              {adding ? 'Adding...' : 'Add & Send Outreach Email'}
-            </button>
-          </form>
+          </div>
+
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+            <div className="text-xs uppercase tracking-[0.16em] text-amber-200/75">
+              Team follow-up
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-amber-100">
+              {openSupportCount}
+            </div>
+            <div className="mt-1 text-sm text-amber-200/80">
+              Investors currently waiting for direct human follow-up.
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-5">
+            <div className="text-xs uppercase tracking-[0.16em] text-indigo-200/80">
+              Manual checkpoints
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-indigo-100">
+              {pendingKycCount + paymentPendingCount}
+            </div>
+            <div className="mt-1 text-sm text-indigo-200/80">
+              {pendingKycCount} KYC review
+              {pendingKycCount === 1 ? '' : 's'} and {paymentPendingCount}{' '}
+              payment confirmation
+              {paymentPendingCount === 1 ? '' : 's'} are waiting.
+            </div>
+          </div>
         </div>
 
         <div className="rounded-lg border border-futurex-line bg-futurex-surface p-6">
-          <h2 className="mb-6 text-2xl font-serif text-futurex-ink">
-            Investor Pipeline
-          </h2>
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-serif text-futurex-ink">
+                All Investors
+              </h2>
+              <p className="mt-2 text-sm text-futurex-muted">
+                Filters are coming next. For now this page shows the full ordered
+                pipeline with direct review controls for each investor.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/admin"
+                className="rounded-full border border-futurex-line px-4 py-2 text-sm text-futurex-muted transition hover:border-futurex-gold hover:text-futurex-gold"
+              >
+                Back to Efficiency
+              </Link>
+              <AddInvestorButton
+                adminEmail={adminEmail}
+                onUnauthorized={handleUnauthorized}
+                onAdded={() => {
+                  void fetchLeads();
+                }}
+                buttonLabel="Add Investor"
+                buttonClassName="rounded-full bg-futurex-gold px-4 py-2 text-sm font-semibold text-futurex-bg transition hover:opacity-90"
+              />
+            </div>
+          </div>
 
           {loading ? (
             <p className="text-futurex-muted">Loading...</p>
           ) : leads.length === 0 ? (
             <p className="text-futurex-muted">
-              No investors yet. Add one above to get started.
+              No investors yet. Use “Add Investor” to create the first offeree
+              record.
             </p>
           ) : (
             <div className="space-y-4">
@@ -650,7 +590,6 @@ export default function AdminDashboardClient({
             </div>
           )}
         </div>
-      </main>
-    </div>
+    </AdminShell>
   );
 }

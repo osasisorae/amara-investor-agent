@@ -2,6 +2,20 @@
 
 Date: 2026-07-02
 
+## Status
+
+- Phase 1 complete on `2026-07-03`
+- Current shipped surfaces:
+  - `/admin` -> dedicated efficiency overview
+  - `/admin/pipeline` -> dedicated investor pipeline page
+- Current shipped Phase 1 outputs:
+  - metrics service using existing `leads`, `messages`, and `audit_events`
+  - admin metrics endpoint
+  - efficiency dashboard with `7 / 30 / 90 day` cohort filters
+  - add-investor action moved into an on-demand admin control instead of a permanent inline form
+- Current next focus:
+  - Phase 2 telemetry for model usage, latency, successful OTP verification, and any remaining review-resolution gaps
+
 ## Objective
 
 Implement a practical, measurable definition of agent efficiency for Amara using the current lead, message, and audit model, then close the remaining telemetry gaps needed for a full cost-aware score.
@@ -239,4 +253,3 @@ Operationalize:
 - trend views
 - alerts for stalled stages
 - threshold-based health reporting
-

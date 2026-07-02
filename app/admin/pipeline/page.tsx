@@ -1,13 +1,13 @@
 import { redirect } from 'next/navigation';
 import { getAdminSession } from '@/lib/admin-auth';
-import AdminOverviewClient from './admin-overview-client';
+import AdminPipelineClient from '../admin-dashboard-client';
 
-export default async function AdminPage() {
+export default async function AdminPipelinePage() {
   const session = await getAdminSession();
 
   if (!session) {
     redirect('/admin/login');
   }
 
-  return <AdminOverviewClient adminEmail={session.email} />;
+  return <AdminPipelineClient adminEmail={session.email} />;
 }
